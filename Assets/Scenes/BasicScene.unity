@@ -1385,12 +1385,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: eb632ccc14996c04cbfa0c8e030465be, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BroomFlightController
+  portName: COM6
+  baudRate: 9600
+  enableSerial: 1
+  rigTarget: {fileID: 0}
+  vrCamera: {fileID: 1360162433}
   speedMultiplier: 0.5
   accelerationSmooth: 0.05
   decelerationSmooth: 0.02
-  vrCamera: {fileID: 1360162433}
   turnSensitivity: 1.2
   tiltThreshold: 10
+  enableKeyboardFallback: 1
+  debugLogs: 1
 --- !u!1 &1430784850
 GameObject:
   m_ObjectHideFlags: 0
