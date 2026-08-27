@@ -86,28 +86,83 @@ public class BroomFlightController : MonoBehaviour
     {
         if (string.IsNullOrEmpty(lastData)) return;
 
-        // 1. Log the exact raw string coming from the Arduino
-        Debug.Log("RAW SERIAL DATA: " + lastData);
+        string cleanData = lastData.Trim();
+        if (string.IsNullOrEmpty(cleanData)) return;
 
         try
         {
-            string[] values = lastData.Split(',');
+            string[] items = cleanData.Split(',');
+            bool parsed = false;
 
-            if (values.Length > 0)
+            // 1. Prioritized search: Look for explicit "Broom_Speed", "Speed", or "Thrust" keys
+            foreach (string item in items)
             {
-                // NOTE: Based on the "Thrust,Pitch,Roll" spec, Thrust is the first value (index 0).
-                // If you actually are using colons (e.g., "Speed:150"), you will need to adjust this!
-                Debug.Log("ATTEMPTING TO PARSE THRUST FROM: " + values[0]);
+                string[] parts = item.Split(':');
+                if (parts.Length == 2)
+                {
+                    string key = parts[0].Trim().ToLower();
+                    if (key.Contains("speed") || key.Contains("thrust"))
+                    {
+                        if (float.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val))
+                        {
+                            targetThrust = Mathf.RoundToInt(val);
+                            parsed = true;
+                            break;
+                        }
+                    }
+                }
+            }
 
-                targetThrust = int.Parse(values[0]);
+            // 2. Secondary search: Check for "Raw_Value" or "Raw" key if speed/thrust was not found
+            if (!parsed)
+            {
+                foreach (string item in items)
+                {
+                    string[] parts = item.Split(':');
+                    if (parts.Length == 2)
+                    {
+                        string key = parts[0].Trim().ToLower();
+                        if (key.Contains("raw") || key.Contains("val"))
+                        {
+                            if (float.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val))
+                            {
+                                targetThrust = Mathf.RoundToInt(val);
+                                parsed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
 
-                // 2. Confirming successful parse
-                Debug.Log("SUCCESS! TARGET THRUST: " + targetThrust);
+            // 3. Fallback: Parse pure numeric values (e.g. "150,10,5" or single number "150")
+            if (!parsed)
+            {
+                foreach (string item in items)
+                {
+                    string rawNum = item;
+                    if (item.Contains(":"))
+                    {
+                        string[] parts = item.Split(':');
+                        rawNum = parts[parts.Length - 1];
+                    }
+
+                    if (float.TryParse(rawNum.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val))
+                    {
+                        targetThrust = Mathf.RoundToInt(val);
+                        parsed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!parsed)
+            {
+                Debug.LogWarning("Could not parse numeric thrust value from raw string: '" + lastData + "'");
             }
         }
         catch (System.Exception e)
         {
-            // 3. STOP SWALLOWING ERRORS - This will print exactly why it is failing!
             Debug.LogError("PARSE ERROR! Raw string was: '" + lastData + "' | Error: " + e.Message);
         }
     }
