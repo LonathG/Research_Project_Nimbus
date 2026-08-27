@@ -1363,6 +1363,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!4 &1360162433 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1767192434, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+  m_PrefabInstance: {fileID: 441087506}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1367747387 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1717954561962503725, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
@@ -1383,7 +1388,7 @@ MonoBehaviour:
   speedMultiplier: 0.5
   accelerationSmooth: 0.05
   decelerationSmooth: 0.02
-  vrCamera: {fileID: 0}
+  vrCamera: {fileID: 1360162433}
   turnSensitivity: 1.2
   tiltThreshold: 10
 --- !u!1 &1430784850

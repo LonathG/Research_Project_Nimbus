@@ -4,7 +4,7 @@ using System.Threading;
 
 public class BroomFlightController : MonoBehaviour
 {
-    private SerialPort sp = new SerialPort("COM4", 9600);
+    private SerialPort sp = new SerialPort("COM6", 9600);
     private Thread serialThread;
     private string lastData = "";
     private bool isRunning = true;
@@ -85,18 +85,32 @@ public class BroomFlightController : MonoBehaviour
     void ParseThrust()
     {
         if (string.IsNullOrEmpty(lastData)) return;
+
+        // 1. Log the exact raw string coming from the Arduino
+        Debug.Log("RAW SERIAL DATA: " + lastData);
+
         try
         {
             string[] values = lastData.Split(',');
-            if (values.Length > 1)
+
+            if (values.Length > 0)
             {
-                string speedString = values[1].Split(':')[1];
-                targetThrust = int.Parse(speedString);
+                // NOTE: Based on the "Thrust,Pitch,Roll" spec, Thrust is the first value (index 0).
+                // If you actually are using colons (e.g., "Speed:150"), you will need to adjust this!
+                Debug.Log("ATTEMPTING TO PARSE THRUST FROM: " + values[0]);
+
+                targetThrust = int.Parse(values[0]);
+
+                // 2. Confirming successful parse
+                Debug.Log("SUCCESS! TARGET THRUST: " + targetThrust);
             }
         }
-        catch { }
+        catch (System.Exception e)
+        {
+            // 3. STOP SWALLOWING ERRORS - This will print exactly why it is failing!
+            Debug.LogError("PARSE ERROR! Raw string was: '" + lastData + "' | Error: " + e.Message);
+        }
     }
-
     void OnApplicationQuit()
     {
         isRunning = false;

@@ -3,7 +3,12 @@ guid: 734e9069bb9a3df4cb811d1ae7a2015b
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: M_GoldRing
+    second: {fileID: 2100000, guid: 59542711bc88ed042901bb3bd507a5fe, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
