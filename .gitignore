@@ -1,32 +1,33 @@
-# Unity standard .gitignore
-[a-zA-Z0-9_]*[a-zA-Z0-9_]/
-[Ll]ibrary/
-[Tt]emp/
-[Oo]bj/
-[Bb]uild/
-[Bb]uilds/
-[Ll]ogs/
-[Uu]ser[Ss]ettings/
-[Mm]emoryCaptures/
+# Unity cache/generated folders
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
 
-# Visual Studio / Visual Studio Code / JetBrains cache
+# Visual Studio / IDE cache
 .vs/
 .idea/
 .vscode/
-*.csproj
-*.unityproj
-*.sln
-*.slnx
-*.suo
-*.user
-*.userprefs
-*.pidb
-*.booproj
-*.svd
-*.pdb
-*.opendb
-*.db
+/*.csproj
+/*.unityproj
+/*.sln
+/*.slnx
+/*.suo
+/*.user
+/*.userprefs
+/*.pidb
+/*.booproj
+/*.svd
+/*.pdb
+/*.opendb
+/*.db
 sysinfo.txt
+CrashReport*
 
 # OS generated files
 .DS_Store

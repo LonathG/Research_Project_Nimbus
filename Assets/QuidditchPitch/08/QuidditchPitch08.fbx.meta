@@ -1,0 +1,380 @@
+fileFormatVersion: 2
+guid: c508af1c2c6cecf4eaa88a07961a0257
+ModelImporter:
+  serializedVersion: 24200
+  internalIDToNameTable: []
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Grass Lawn
+    second: {fileID: 2100000, guid: 4e668ab6f8963ab48a1893a2f774fca2, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: GrassCircle
+    second: {fileID: 2100000, guid: 48735f766e337bc428418041b86bb50d, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: GrassDark
+    second: {fileID: 2100000, guid: 64c68e19c189f264a8fecaf1faa9191d, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: GrassMix
+    second: {fileID: 2100000, guid: eae6542089d54d74e9992be9e2679686, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Grassline
+    second: {fileID: 2100000, guid: 0d5a675335580fb4ebebed7b2544a1da, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidGate
+    second: {fileID: 2100000, guid: a1e69c08ae069084fab2be83a5964361, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidGoalTex0
+    second: {fileID: 2100000, guid: 73ec4cda3d7805e4ebe941876c28b363, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidGryff
+    second: {fileID: 2100000, guid: ca0b05844fbcf1a419a6c2bbf46bd23c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidHuffle
+    second: {fileID: 2100000, guid: a599c50d8b6413a4793533f2ca397649, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidNoCrowd
+    second: {fileID: 2100000, guid: e8ffb974fe15f7b4b80bb6045f54c0b3, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidRaven
+    second: {fileID: 2100000, guid: 863d160fd362ca946af226922ddf85ba, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidSlyth
+    second: {fileID: 2100000, guid: 16d96f1c625395143bd5c27edb773743, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidWalkway
+    second: {fileID: 2100000, guid: 737a1e123556c554aa5224c88f8edcc4, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: QuidditchSand
+    second: {fileID: 2100000, guid: f0dd31aa8d3889c4db1a5d83d329c7cc, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerBlack
+    second: {fileID: 2100000, guid: cb36fbcdf15c95849b2179b0b216af8f, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerBlue
+    second: {fileID: 2100000, guid: 56b99fe6416aea74ea2d7ac2b1f5dce4, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerGeneric
+    second: {fileID: 2100000, guid: be319c8bf602896499d97504f6306d3b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerGreen
+    second: {fileID: 2100000, guid: a029218d7a8f3f04ca4f9e7b602bb272, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerGryff
+    second: {fileID: 2100000, guid: a75b7e74e18e2294e9f3ab6f6d7960da, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerHuffle
+    second: {fileID: 2100000, guid: b8393d3baf00bb34e82e6fa6039ef39f, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerLtBlue
+    second: {fileID: 2100000, guid: b9827b0969f43c6459119a3b65493928, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerRaven
+    second: {fileID: 2100000, guid: 2472c9e62f4a63d459be46ca91b5b727, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerRed
+    second: {fileID: 2100000, guid: eeb952dab6802ca4cabb6d9e86f095cd, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerSlyth
+    second: {fileID: 2100000, guid: 859c1407ed6dd3646b874588ea4fc0e0, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerWhite
+    second: {fileID: 2100000, guid: 48aa5ef9c4350a842a60a13183625cf8, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TowerYellow
+    second: {fileID: 2100000, guid: 744f6467f0250d34f88157ca9ec88f7e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: WoodHatch
+    second: {fileID: 2100000, guid: 9a313236cd4630249b426a71a893fea3, type: 2}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: GrassCircle_baseColor
+    second: {fileID: 2800000, guid: d1627628258db5c4593008deda981d5b, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: GrassDark_baseColor
+    second: {fileID: 2800000, guid: ea155219e935a794383ffa18c5e76d9f, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: GrassMix_baseColor
+    second: {fileID: 2800000, guid: 7a6c75c7a3c269b488feb89e57608167, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: Grassline_baseColor
+    second: {fileID: 2800000, guid: 43b4a76515b295a4582e502cfe11cdae, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidGate_baseColor
+    second: {fileID: 2800000, guid: 353109a9788c4f64b93db508a211936b, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidGoalTex0_baseColor
+    second: {fileID: 2800000, guid: ca0193ccfc2d44d47b08aa2876ae3fde, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidGryff_baseColor
+    second: {fileID: 2800000, guid: e4cbc47ba47d3ba46b2bd45f0d06ffbb, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidHuffle_baseColor
+    second: {fileID: 2800000, guid: e5d707315f839354a9f333291fade5bd, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidNoCrowd_baseColor
+    second: {fileID: 2800000, guid: e36ecd7c80a2dc540b924231df0c0144, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidRaven_baseColor
+    second: {fileID: 2800000, guid: e5c8943f1624a4a45bc0b29aa55726c8, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidSlyth_baseColor
+    second: {fileID: 2800000, guid: af4469bd9ca4b9f428d9e511461e994f, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidWalkway_baseColor
+    second: {fileID: 2800000, guid: 85340b495579a0e4898b12b339db6200, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: QuidditchSand_baseColor
+    second: {fileID: 2800000, guid: 849cb211d9f99484fb655730cfe740c1, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: T_Landscape_Color
+    second: {fileID: 2800000, guid: 1b86073547de1474fa5f4ed3e1429171, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: T_Landscape_Normal
+    second: {fileID: 2800000, guid: d47cf2880da1b2d43af4ef0d721ecd40, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: T_Landscape_Roughness
+    second: {fileID: 2800000, guid: ca5e26b6e7cdbe14da08265e70254e94, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerBlack_baseColor
+    second: {fileID: 2800000, guid: ca1a420c6c15bb445abb3969ca191b1d, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerBlue_baseColor
+    second: {fileID: 2800000, guid: f11c376336ae9b742b91dec2655376ba, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerGeneric_baseColor
+    second: {fileID: 2800000, guid: 8757eafd79a03da4f8fe74d075275957, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerGreen_baseColor
+    second: {fileID: 2800000, guid: 7187729f7232f9a418a361ea07d63f98, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerLtBlue_baseColor
+    second: {fileID: 2800000, guid: 4121030b09f087a49a446b64bec9841a, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerRaven_baseColor
+    second: {fileID: 2800000, guid: d3962b9e9900ff04e822a92d100fd3e5, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerRed_baseColor
+    second: {fileID: 2800000, guid: b5342d4ccaa04b44a947b0c778da09d2, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerSlyth_baseColor
+    second: {fileID: 2800000, guid: b79980752fa8b8a4b8667c700d2df7fe, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerWhite_baseColor
+    second: {fileID: 2800000, guid: eff057db8d3f40c4d89a5433e58f7055, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: TowerYellow_baseColor
+    second: {fileID: 2800000, guid: 79744b66579e6ea4887758127daa39fc, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: WoodHatch_baseColor
+    second: {fileID: 2800000, guid: c6b67d128f2409d48a551e6e421d5c7a, type: 3}
+  materials:
+    materialImportMode: 2
+    materialName: 0
+    materialSearch: 1
+    materialLocation: 1
+  animations:
+    legacyGenerateAnimations: 4
+    bakeSimulation: 0
+    resampleCurves: 1
+    optimizeGameObjects: 0
+    removeConstantScaleCurves: 0
+    motionNodeName: 
+    animationImportErrors: 
+    animationImportWarnings: 
+    animationRetargetingWarnings: 
+    animationDoRetargetingWarnings: 0
+    importAnimatedCustomProperties: 0
+    importConstraints: 0
+    animationCompression: 1
+    animationRotationError: 0.5
+    animationPositionError: 0.5
+    animationScaleError: 0.5
+    animationWrapMode: 0
+    extraExposedTransformPaths: []
+    extraUserProperties: []
+    clipAnimations: []
+    isReadable: 0
+  meshes:
+    lODScreenPercentages: []
+    globalScale: 1
+    meshCompression: 0
+    addColliders: 0
+    useSRGBMaterialColor: 1
+    sortHierarchyByName: 1
+    importPhysicalCameras: 1
+    importVisibility: 1
+    importBlendShapes: 1
+    importCameras: 1
+    importLights: 1
+    nodeNameCollisionStrategy: 1
+    fileIdsGeneration: 2
+    swapUVChannels: 0
+    generateSecondaryUV: 0
+    useFileUnits: 1
+    keepQuads: 0
+    weldVertices: 1
+    bakeAxisConversion: 0
+    preserveHierarchy: 0
+    skinWeightsMode: 0
+    maxBonesPerVertex: 4
+    minBoneWeight: 0.001
+    optimizeBones: 1
+    generateMeshLods: 0
+    meshLodGenerationFlags: 0
+    maximumMeshLod: -1
+    meshOptimizationFlags: -1
+    indexFormat: 0
+    secondaryUVAngleDistortion: 8
+    secondaryUVAreaDistortion: 15.000001
+    secondaryUVHardAngle: 88
+    secondaryUVMarginMethod: 1
+    secondaryUVMinLightmapResolution: 40
+    secondaryUVMinObjectScale: 1
+    secondaryUVPackMargin: 4
+    useFileScale: 1
+    strictVertexDataChecks: 0
+  tangentSpace:
+    normalSmoothAngle: 60
+    normalImportMode: 0
+    tangentImportMode: 3
+    normalCalculationMode: 4
+    legacyComputeAllNormalsFromSmoothingGroupsWhenMeshHasBlendShapes: 0
+    blendShapeNormalImportMode: 1
+    normalSmoothingSource: 0
+  referencedClips: []
+  importAnimation: 1
+  humanDescription:
+    serializedVersion: 3
+    human: []
+    skeleton: []
+    armTwist: 0.5
+    foreArmTwist: 0.5
+    upperLegTwist: 0.5
+    legTwist: 0.5
+    armStretch: 0.05
+    legStretch: 0.05
+    feetSpacing: 0
+    globalScale: 1
+    rootMotionBoneName: 
+    hasTranslationDoF: 0
+    hasExtraRoot: 0
+    skeletonHasParents: 1
+  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  autoGenerateAvatarMappingIfUnspecified: 1
+  animationType: 2
+  humanoidOversampling: 1
+  avatarSetup: 0
+  addHumanoidExtraRootOnlyWhenUsingAvatar: 1
+  importBlendShapeDeformPercent: 1
+  remapMaterialsIfMaterialImportModeIsNone: 0
+  additionalBone: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
