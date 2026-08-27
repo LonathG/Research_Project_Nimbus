@@ -86,8 +86,18 @@ public class BroomFlightController : MonoBehaviour
     {
         if (string.IsNullOrEmpty(lastData)) return;
 
+        // Consume lastData so each received string is processed only once
         string cleanData = lastData.Trim();
+        lastData = null;
+
         if (string.IsNullOrEmpty(cleanData)) return;
+
+        // Handle Arduino status/header messages (e.g. "--- FSR ONLY MODE: TESTING THRUST ---")
+        if (cleanData.StartsWith("-") || cleanData.StartsWith("=") || cleanData.StartsWith("*") || cleanData.StartsWith("#") || !HasDigits(cleanData))
+        {
+            Debug.Log("ARDUINO INFO: " + cleanData);
+            return;
+        }
 
         try
         {
@@ -158,13 +168,22 @@ public class BroomFlightController : MonoBehaviour
 
             if (!parsed)
             {
-                Debug.LogWarning("Could not parse numeric thrust value from raw string: '" + lastData + "'");
+                Debug.LogWarning("Could not parse numeric thrust value from raw string: '" + cleanData + "'");
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogError("PARSE ERROR! Raw string was: '" + lastData + "' | Error: " + e.Message);
+            Debug.LogError("PARSE ERROR! Raw string was: '" + cleanData + "' | Error: " + e.Message);
         }
+    }
+
+    private bool HasDigits(string input)
+    {
+        foreach (char c in input)
+        {
+            if (char.IsDigit(c)) return true;
+        }
+        return false;
     }
     void OnApplicationQuit()
     {
