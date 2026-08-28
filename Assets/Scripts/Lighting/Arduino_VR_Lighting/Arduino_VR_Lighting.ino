@@ -402,7 +402,8 @@ void runRingEffect() {
         int pos = MAIN_NUM_LEDS - 1 - forwardPos;
         
         if (pos >= 0 && pos < MAIN_NUM_LEDS) {
-            mainLeds[pos] = ringColor;
+            mainLeds[pos] = ringColor;\
+            
             
             // Draw a few extra pixels for a thicker head, trailing backwards (higher indices)
             if (pos + 1 < MAIN_NUM_LEDS) mainLeds[pos + 1] = ringColor;
@@ -418,3 +419,4 @@ void runRingEffect() {
         fadeToBlackBy(mainLeds, MAIN_NUM_LEDS, fadeAmount); 
     }
 }
+
