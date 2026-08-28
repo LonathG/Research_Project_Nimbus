@@ -35,12 +35,12 @@ public class BroomFlightController : MonoBehaviour
     public float tiltThreshold = 8f;
 
     [Header("Sensor Mapping Settings")]
-    [Tooltip("Minimum expected raw sensor value from hardware (e.g. 0).")]
-    public float rawInputMin = 0f;
-    [Tooltip("Maximum expected raw sensor value for Thrust FSR 1 (e.g. 7).")]
-    public float rawThrustMax = 7f;
-    [Tooltip("Maximum expected raw sensor value for Altitude FSR 2 (e.g. 1 for 0-1 switch, 7 for 0-7 handle).")]
-    public float rawAltitudeMax = 1f;
+    [Tooltip("Minimum expected raw sensor value from hardware (deadzone).")]
+    public float rawInputMin = 15f;
+    [Tooltip("Maximum expected raw sensor value for Thrust FSR 1 (e.g. 350).")]
+    public float rawThrustMax = 350f;
+    [Tooltip("Maximum expected raw sensor value for Altitude FSR 2 (e.g. 700).")]
+    public float rawAltitudeMax = 700f;
     [Tooltip("Automatically scale hardware values to 0-100% flight thrust & altitude.")]
     public bool autoScaleSensorInput = true;
 
@@ -212,7 +212,7 @@ public class BroomFlightController : MonoBehaviour
         float targetVertSpeed;
         if (targetAltitude > 0)
         {
-            // Pressure registered on FSR 2 / Space pressed -> Fly UP proportional to force
+            // Pressure registered on FSR 2 / Space pressed -> Fly UP proportional to force (clamped 0-100%)
             float climbRatio = Mathf.Clamp01(targetAltitude / 100f);
             targetVertSpeed = climbRatio * maxClimbSpeed;
         }
@@ -357,7 +357,7 @@ public class BroomFlightController : MonoBehaviour
             bool parsedThrust = false;
             bool parsedAltitude = false;
 
-            // 1. Prioritize processed keys ("Broom_Speed", "Broom_Altitude")
+            // 1. Prioritize processed percentage keys ("Broom_Speed", "Broom_Altitude")
             foreach (string item in items)
             {
                 string[] parts = item.Split(':');
@@ -368,12 +368,12 @@ public class BroomFlightController : MonoBehaviour
                     {
                         if (key == "broom_speed" || key == "speed")
                         {
-                            targetThrust = ScaleSensorValue(val, rawThrustMax);
+                            targetThrust = Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
                             parsedThrust = true;
                         }
                         else if (key == "broom_altitude" || key == "altitude" || key == "climb" || key == "lift")
                         {
-                            targetAltitude = ScaleSensorValue(val, rawAltitudeMax);
+                            targetAltitude = Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
                             parsedAltitude = true;
                         }
                     }
@@ -406,7 +406,7 @@ public class BroomFlightController : MonoBehaviour
                 }
             }
 
-            // 3. Fallback for unlabeled comma-separated numbers (e.g. "7, 1" -> thrust, altitude)
+            // 3. Fallback for unlabeled comma-separated numbers (e.g. "300, 700" -> thrust, altitude)
             if (!parsedThrust && !parsedAltitude && items.Length >= 1)
             {
                 if (float.TryParse(items[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val1))
@@ -429,16 +429,8 @@ public class BroomFlightController : MonoBehaviour
     {
         if (autoScaleSensorInput && maxVal > rawInputMin)
         {
-            // If input value is within maxVal range (e.g. 0-1 for FSR 2 or 0-7 for FSR 1), map to 0-100 percentage.
-            if (val <= maxVal)
-            {
-                float pct = Mathf.InverseLerp(rawInputMin, maxVal, val) * 100f;
-                return Mathf.RoundToInt(Mathf.Clamp(pct, 0f, 100f));
-            }
-            else
-            {
-                return Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
-            }
+            float pct = Mathf.InverseLerp(rawInputMin, maxVal, val) * 100f;
+            return Mathf.RoundToInt(Mathf.Clamp(pct, 0f, 100f));
         }
         else
         {
