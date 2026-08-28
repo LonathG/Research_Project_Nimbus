@@ -9,6 +9,10 @@ const int thrustMax = 350;        // Max expected reading for FSR 1 (e.g. 100-50
 const int altitudeDeadzone = 25;  // Below this value is considered resting/zero
 const int altitudeMax = 700;      // Max expected reading for FSR 2 (e.g. 700)
 
+// Exponential Moving Average filter values for hardware noise suppression
+float smoothThrust = 0;
+float smoothAltitude = 0;
+
 void setup() {
   Serial.begin(9600);
   Serial.println("--- DUAL FSR MODE: THRUST (A0) & ALTITUDE (A1) ---");
@@ -22,15 +26,19 @@ void loop() {
   analogRead(altitudeFsrPin); // dummy read to settle ADC multiplexer
   int rawAltitude = analogRead(altitudeFsrPin);
 
-  // 3. Map raw readings to 0-100% with deadzone and constrain to prevent runaway numbers
+  // Low-Pass Exponential Filter (Smooths out jitter/jumping effect)
+  smoothThrust = (smoothThrust * 0.75f) + (rawThrust * 0.25f);
+  smoothAltitude = (smoothAltitude * 0.75f) + (rawAltitude * 0.25f);
+
+  // 3. Map smoothed readings to 0-100% with deadzone and constrain
   int speedPercent = 0;
-  if (rawThrust > thrustDeadzone) {
-    speedPercent = constrain(map(rawThrust, thrustDeadzone, thrustMax, 0, 100), 0, 100);
+  if (smoothThrust > thrustDeadzone) {
+    speedPercent = constrain(map((int)smoothThrust, thrustDeadzone, thrustMax, 0, 100), 0, 100);
   }
 
   int altPercent = 0;
-  if (rawAltitude > altitudeDeadzone) {
-    altPercent = constrain(map(rawAltitude, altitudeDeadzone, altitudeMax, 0, 100), 0, 100);
+  if (smoothAltitude > altitudeDeadzone) {
+    altPercent = constrain(map((int)smoothAltitude, altitudeDeadzone, altitudeMax, 0, 100), 0, 100);
   }
 
   // 4. Print raw and speed/altitude key-value pairs for Serial Plotter and Unity
@@ -46,5 +54,5 @@ void loop() {
   Serial.print("Broom_Altitude:");
   Serial.println(altPercent);
 
-  delay(30); // Refresh rate
+  delay(25); // Refresh rate
 }

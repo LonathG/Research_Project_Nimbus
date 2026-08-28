@@ -20,12 +20,14 @@ public class BroomFlightController : MonoBehaviour
     public float decelerationSmooth = 0.02f;
 
     [Header("Flight Physics - Altitude (FSR 2)")]
-    [Tooltip("Ascent speed when pressure is applied to FSR 2.")]
+    [Tooltip("Ascent speed when pressure is applied to FSR 2 or Spacebar is held.")]
     public float maxClimbSpeed = 10.0f;
-    [Tooltip("Descent / gravity fall speed when no pressure is applied to FSR 2.")]
-    public float gravityFallSpeed = 5.0f;
-    [Tooltip("Smooth transition factor for vertical velocity.")]
-    public float altitudeSmooth = 0.08f;
+    [Tooltip("Gradual descent speed when no pressure is applied to FSR 2 (smoothly brings broom down to ground).")]
+    public float gravityFallSpeed = 4.0f;
+    [Tooltip("Fast descent speed when Q / Left Control is pressed.")]
+    public float maxDescendSpeed = 7.0f;
+    [Tooltip("Smooth time for vertical velocity transitions.")]
+    public float altitudeSmoothTime = 0.22f;
     [Tooltip("Minimum Y height floor level to prevent falling into void.")]
     public float minGroundY = 0.0f;
     public bool useGroundLimit = true;
@@ -45,7 +47,7 @@ public class BroomFlightController : MonoBehaviour
     public bool autoScaleSensorInput = true;
 
     [Header("Testing & Debug Fallback")]
-    [Tooltip("Allow pressing W/Up to thrust, Space/E to fly up, Q to fall for testing without hardware.")]
+    [Tooltip("Allow pressing W/Up to thrust, Space/E to climb, Q/Ctrl to descend for testing without hardware.")]
     public bool enableKeyboardFallback = true;
     public bool debugLogs = true;
     [Tooltip("Display an on-screen real-time telemetry HUD in the Game view / VR.")]
@@ -58,6 +60,11 @@ public class BroomFlightController : MonoBehaviour
 
     private float currentSpeed = 0f;
     private float currentVerticalSpeed = 0f;
+    private float verticalSpeedVelocity = 0f;
+    private float smoothThrustInput = 0f;
+    private float smoothAltitudeInput = 0f;
+    private int serialThrust = 0;
+    private int serialAltitude = 0;
     private int targetThrust = 0;
     private int targetAltitude = 0;
     private float logTimer = 0f;
@@ -168,29 +175,36 @@ public class BroomFlightController : MonoBehaviour
         // Parse incoming Arduino serial inputs (Forward Thrust & Altitude FSRs)
         ParseSerialData();
 
-        // Keyboard / Editor Testing Fallback
+        // Keyboard inputs
+        int keyboardThrust = 0;
+        int keyboardAltitude = 0;
+        bool isKeyboardDescending = false;
+
         if (enableKeyboardFallback)
         {
-            // Thrust Keyboard Controls
             if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow))
             {
-                targetThrust = 100;
-            }
-            else if (sp == null || !sp.IsOpen)
-            {
-                targetThrust = 0;
+                keyboardThrust = 100;
             }
 
-            // Altitude Keyboard Controls (Space / E = Fly UP)
             if (Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.E))
             {
-                targetAltitude = 100;
+                keyboardAltitude = 100;
             }
-            else if (sp == null || !sp.IsOpen)
+
+            if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C))
             {
-                targetAltitude = 0;
+                isKeyboardDescending = true;
             }
         }
+
+        // Combine Serial Hardware and Keyboard Inputs (Neither overrides the other with 0s)
+        targetThrust = Mathf.Max(serialThrust, keyboardThrust);
+        targetAltitude = Mathf.Max(serialAltitude, keyboardAltitude);
+
+        // Smooth incoming sensor inputs to eliminate frame-rate gap jitter
+        smoothThrustInput = Mathf.Lerp(smoothThrustInput, targetThrust, 15f * Time.deltaTime);
+        smoothAltitudeInput = Mathf.Lerp(smoothAltitudeInput, targetAltitude, 15f * Time.deltaTime);
 
         // 0. Check Grounded State
         bool isGrounded = false;
@@ -204,35 +218,46 @@ public class BroomFlightController : MonoBehaviour
         }
 
         // 1. Calculate Target & Current Horizontal Speed
-        float targetSpeed = targetThrust * speedMultiplier;
+        // Automatically handles decimal multipliers (e.g. 0.5 -> 50m/s) or direct max speed (e.g. 30 -> 30m/s)
+        float maxSpeed = (speedMultiplier <= 2.0f) ? (speedMultiplier * 100f) : speedMultiplier;
+        float targetSpeed = (smoothThrustInput / 100f) * maxSpeed;
         float lerpFactor = (targetSpeed > currentSpeed) ? accelerationSmooth : decelerationSmooth;
         currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, lerpFactor);
 
-        // 2. Calculate Vertical Climb vs Fall Velocity
-        float targetVertSpeed;
-        if (targetAltitude > 0)
+        // 2. Calculate Vertical Climb vs Smooth Fall/Descent Velocity
+        float targetVertSpeed = 0f;
+        if (smoothAltitudeInput > 2.0f)
         {
-            // Pressure registered on FSR 2 / Space pressed -> Fly UP proportional to force (clamped 0-100%)
-            float climbRatio = Mathf.Clamp01(targetAltitude / 100f);
+            // Squeezing FSR 2 (or holding Space) -> Fly UP proportional to squeeze pressure
+            float climbRatio = Mathf.Clamp01(smoothAltitudeInput / 100f);
             targetVertSpeed = climbRatio * maxClimbSpeed;
+        }
+        else if (isKeyboardDescending)
+        {
+            // Fast descent override key pressed (Q / Left Ctrl)
+            targetVertSpeed = -maxDescendSpeed;
         }
         else
         {
+            // No pressure registered on FSR 2 -> Gradually & smoothly descend back to ground
             if (isGrounded)
             {
-                // When grounded with no climb pressure, use a gentle grounding force to prevent physics bouncing
-                targetVertSpeed = -0.5f;
+                targetVertSpeed = -0.5f; // Soft grounding force on floor
             }
             else
             {
-                // Falling back to ground under gravity
-                targetVertSpeed = -gravityFallSpeed;
+                targetVertSpeed = -gravityFallSpeed; // Steady smooth glide down to ground
             }
         }
 
-        // Responsive time-based vertical speed transition (avoids framerate-dependent oscillation)
-        float vertRate = (targetVertSpeed > currentVerticalSpeed) ? 25f : 15f;
-        currentVerticalSpeed = Mathf.MoveTowards(currentVerticalSpeed, targetVertSpeed, vertRate * Time.deltaTime);
+        // Silky smooth vertical speed transition
+        currentVerticalSpeed = Mathf.SmoothDamp(currentVerticalSpeed, targetVertSpeed, ref verticalSpeedVelocity, altitudeSmoothTime);
+
+        // Soft Touchdown Anti-Bounce: When touching ground, clamp downward speed so physics doesn't bounce
+        if (isGrounded && currentVerticalSpeed < -0.8f && smoothAltitudeInput <= 2.0f)
+        {
+            currentVerticalSpeed = -0.5f;
+        }
 
         // Debug Periodic Console Summary
         logTimer += Time.deltaTime;
@@ -368,12 +393,12 @@ public class BroomFlightController : MonoBehaviour
                     {
                         if (key == "broom_speed" || key == "speed")
                         {
-                            targetThrust = Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
+                            serialThrust = Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
                             parsedThrust = true;
                         }
                         else if (key == "broom_altitude" || key == "altitude" || key == "climb" || key == "lift")
                         {
-                            targetAltitude = Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
+                            serialAltitude = Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
                             parsedAltitude = true;
                         }
                     }
@@ -393,12 +418,12 @@ public class BroomFlightController : MonoBehaviour
                         {
                             if (!parsedThrust && (key == "raw_thrust" || key.Contains("thrust")))
                             {
-                                targetThrust = ScaleSensorValue(val, rawThrustMax);
+                                serialThrust = ScaleSensorValue(val, rawThrustMax);
                                 parsedThrust = true;
                             }
                             else if (!parsedAltitude && (key == "raw_altitude" || key.Contains("alt")))
                             {
-                                targetAltitude = ScaleSensorValue(val, rawAltitudeMax);
+                                serialAltitude = ScaleSensorValue(val, rawAltitudeMax);
                                 parsedAltitude = true;
                             }
                         }
@@ -411,11 +436,11 @@ public class BroomFlightController : MonoBehaviour
             {
                 if (float.TryParse(items[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val1))
                 {
-                    targetThrust = ScaleSensorValue(val1, rawThrustMax);
+                    serialThrust = ScaleSensorValue(val1, rawThrustMax);
                 }
                 if (items.Length >= 2 && float.TryParse(items[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val2))
                 {
-                    targetAltitude = ScaleSensorValue(val2, rawAltitudeMax);
+                    serialAltitude = ScaleSensorValue(val2, rawAltitudeMax);
                 }
             }
         }
