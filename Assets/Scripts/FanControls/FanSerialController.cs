@@ -1,18 +1,21 @@
 using System;
+using System.Collections;
 using System.IO.Ports;
 using UnityEngine;
 
 /// <summary>
-/// Controls 3 physical wind simulation fans via Arduino on COM12.
-/// Dynamically scales fan RPM based on VR Rig forward movement speed and head turning/tilt.
+/// Controls 3 physical wind simulation fans via Arduino on COM15 (with auto-detect support).
+/// Dynamically scales fan RPM as long as the VR Rig moves forward.
 /// </summary>
 public class FanSerialController : MonoBehaviour
 {
     public static FanSerialController Instance { get; private set; }
 
     [Header("Serial Port Settings (Arduino Fans)")]
-    [Tooltip("COM Port where Arduino Fan controller is connected.")]
-    public string portName = "COM12";
+    [Tooltip("Target COM port where the Arduino Fan controller is connected (e.g. COM15).")]
+    public string portName = "COM15";
+    [Tooltip("If enabled, automatically scans other COM ports if the specified port fails.")]
+    public bool autoDetectPort = true;
     public int baudRate = 115200;
     public bool enableSerial = true;
 
@@ -28,7 +31,7 @@ public class FanSerialController : MonoBehaviour
     [Tooltip("Speed in m/s that corresponds to maximum fan speed (255 PWM).")]
     public float maxSpeedForFullWind = 25.0f;
     [Tooltip("Minimum speed threshold (m/s) before fans start blowing.")]
-    public float minSpeedThreshold = 0.2f;
+    public float minSpeedThreshold = 0.15f;
     [Tooltip("Minimum PWM sent to fan when moving (helps fans overcome static motor friction).")]
     [Range(0, 100)]
     public int minFanStartPWM = 40;
@@ -48,8 +51,10 @@ public class FanSerialController : MonoBehaviour
     public float directionalIntensity = 0.6f;
 
     [Header("Transmission Optimization")]
-    [Tooltip("Interval (seconds) between serial packets to prevent buffer overflow (e.g. 0.05s = 20Hz).")]
+    [Tooltip("Interval (seconds) between serial packets (e.g. 0.05s = 20Hz).")]
     public float updateInterval = 0.05f;
+    [Tooltip("Maximum time without sending a packet before a heartbeat packet is forced (keeps Arduino watchdog alive).")]
+    public float heartbeatInterval = 0.4f;
 
     [Header("Debug & Telemetry")]
     public bool showDebugLogs = false;
@@ -57,9 +62,11 @@ public class FanSerialController : MonoBehaviour
 
     // Internal State
     private SerialPort serialPort;
-    private float currentForwardSpeed = 0f;
+    private string activePort = "";
+    private bool isConnecting = false;
     private float smoothedForwardSpeed = 0f;
     private float lastSendTime = 0f;
+    private float lastSuccessfulTransmitTime = 0f;
 
     private int currentLeftPWM = 0;
     private int currentMiddlePWM = 0;
@@ -69,6 +76,8 @@ public class FanSerialController : MonoBehaviour
     private int lastSentRight = -1;
 
     private Vector3 lastRigPosition;
+    private CharacterController characterController;
+    private Rigidbody rigRigidbody;
 
     void Awake()
     {
@@ -82,18 +91,6 @@ public class FanSerialController : MonoBehaviour
         if (flightController == null)
         {
             flightController = FindObjectOfType<BroomFlightController>();
-        }
-
-        if (rigTarget == null)
-        {
-            if (flightController != null && flightController.rigTarget != null)
-            {
-                rigTarget = flightController.rigTarget;
-            }
-            else
-            {
-                rigTarget = transform;
-            }
         }
 
         if (vrCamera == null)
@@ -112,19 +109,171 @@ public class FanSerialController : MonoBehaviour
             }
         }
 
+        if (rigTarget == null)
+        {
+            if (flightController != null && flightController.rigTarget != null)
+            {
+                rigTarget = flightController.rigTarget;
+            }
+            else if (vrCamera != null && vrCamera.parent != null)
+            {
+                rigTarget = vrCamera.parent;
+            }
+            else
+            {
+                rigTarget = transform;
+            }
+        }
+
         if (rigTarget != null)
         {
             lastRigPosition = rigTarget.position;
+            characterController = rigTarget.GetComponent<CharacterController>();
+            rigRigidbody = rigTarget.GetComponent<Rigidbody>();
         }
 
-        // 2. Initialize Serial Connection
+        // 2. Initialize Serial Connection (Tries COM15 first, scans if needed)
         if (enableSerial)
         {
-            OpenSerialConnection();
+            StartCoroutine(AutoConnectLoop());
         }
     }
 
-    private void OpenSerialConnection()
+    /// <summary>
+    /// Background routine that ensures the serial connection is established and stays alive.
+    /// </summary>
+    private IEnumerator AutoConnectLoop()
+    {
+        while (enableSerial)
+        {
+            if (serialPort == null || !serialPort.IsOpen)
+            {
+                yield return StartCoroutine(DetectAndOpenSerialPort());
+            }
+
+            // Check connection health every 3 seconds
+            yield return new WaitForSeconds(3.0f);
+        }
+    }
+
+    private IEnumerator DetectAndOpenSerialPort()
+    {
+        if (isConnecting) yield break;
+        isConnecting = true;
+
+        // 1. First priority: Try user-specified port (e.g. COM15)
+        if (!string.IsNullOrEmpty(portName) && !portName.Equals("AUTO", StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryOpenPort(portName))
+            {
+                activePort = portName;
+                isConnecting = false;
+                yield break;
+            }
+        }
+
+        if (!autoDetectPort)
+        {
+            isConnecting = false;
+            yield break;
+        }
+
+        // 2. Auto-detect across all available ports
+        string[] availablePorts = SerialPort.GetPortNames();
+        if (availablePorts == null || availablePorts.Length == 0)
+        {
+            if (showDebugLogs) Debug.LogWarning("[FanSerialController] No COM ports found. Will retry...");
+            isConnecting = false;
+            yield break;
+        }
+
+        // If only 1 port exists, directly connect to it
+        if (availablePorts.Length == 1)
+        {
+            string singlePort = availablePorts[0];
+            if (TryOpenPort(singlePort))
+            {
+                activePort = singlePort;
+                portName = singlePort;
+                isConnecting = false;
+                yield break;
+            }
+        }
+
+        // Multiple ports: Probe each available port with handshake
+        foreach (string candidatePort in availablePorts)
+        {
+            if (TryProbePortForFans(candidatePort))
+            {
+                activePort = candidatePort;
+                portName = candidatePort;
+                Debug.Log($"[FanSerialController] Auto-detected Fan Arduino on {candidatePort}!");
+                isConnecting = false;
+                yield break;
+            }
+            yield return new WaitForSeconds(0.05f);
+        }
+
+        // Fallback: Try first accessible candidate port
+        if (serialPort == null || !serialPort.IsOpen)
+        {
+            foreach (string candidatePort in availablePorts)
+            {
+                if (TryOpenPort(candidatePort))
+                {
+                    activePort = candidatePort;
+                    portName = candidatePort;
+                    Debug.Log($"[FanSerialController] Connected to candidate port {candidatePort}.");
+                    break;
+                }
+            }
+        }
+
+        isConnecting = false;
+    }
+
+    private bool TryProbePortForFans(string port)
+    {
+        SerialPort testPort = null;
+        try
+        {
+            testPort = new SerialPort(port, baudRate);
+            testPort.ReadTimeout = 150;
+            testPort.WriteTimeout = 100;
+            testPort.DtrEnable = true;
+            testPort.Open();
+
+            // Send ping
+            testPort.Write("PING\n");
+
+            // Read response
+            float startTime = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - startTime < 0.25f)
+            {
+                if (testPort.BytesToRead > 0)
+                {
+                    string reply = testPort.ReadLine();
+                    if (!string.IsNullOrEmpty(reply) && (reply.Contains("VR_FAN") || reply.Contains("READY") || reply.Contains("PWM")))
+                    {
+                        serialPort = testPort;
+                        return true;
+                    }
+                }
+            }
+
+            testPort.Close();
+        }
+        catch (Exception)
+        {
+            if (testPort != null && testPort.IsOpen)
+            {
+                try { testPort.Close(); } catch { }
+            }
+        }
+        return false;
+    }
+
+    private bool TryOpenPort(string port)
     {
         try
         {
@@ -133,28 +282,34 @@ public class FanSerialController : MonoBehaviour
                 serialPort.Close();
             }
 
-            serialPort = new SerialPort(portName, baudRate);
+            serialPort = new SerialPort(port, baudRate);
             serialPort.WriteTimeout = 50;
             serialPort.ReadTimeout = 10;
+            serialPort.DtrEnable = true;
             serialPort.Open();
 
-            Debug.Log($"[FanSerialController] Successfully connected to Fans on {portName} at {baudRate} baud!");
+            Debug.Log($"[FanSerialController] Successfully opened Fan serial connection on {port} ({baudRate} baud).");
+            return true;
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[FanSerialController] Could not open {portName}: {e.Message}. Make sure Arduino is connected to {portName}.");
+            if (showDebugLogs)
+            {
+                Debug.LogWarning($"[FanSerialController] Could not open {port}: {e.Message}");
+            }
+            return false;
         }
     }
 
     void Update()
     {
-        // 1. Calculate VR Rig Speed
-        CalculateRigSpeed();
+        // 1. Calculate VR Rig Forward Movement Speed
+        CalculateRigForwardSpeed();
 
-        // 2. Compute 3-Fan PWM Levels based on Speed & Head Tilt
+        // 2. Compute 3-Fan PWM Levels based on Forward Speed & Head Tilt
         ComputeFanPWMs();
 
-        // 3. Transmit to Arduino over Serial
+        // 3. Transmit to Arduino over Serial (periodic / heartbeat)
         if (Time.time - lastSendTime >= updateInterval)
         {
             SendFanPWMData();
@@ -162,32 +317,62 @@ public class FanSerialController : MonoBehaviour
         }
     }
 
-    private void CalculateRigSpeed()
+    /// <summary>
+    /// Accurately detects forward movement of the VR Rig from all available sources.
+    /// </summary>
+    private void CalculateRigForwardSpeed()
     {
         float targetSpeed = 0f;
 
-        // Primary source: BroomFlightController
-        if (flightController != null)
+        // Source 1: BroomFlightController
+        if (flightController != null && flightController.enabled)
         {
-            targetSpeed = flightController.CurrentSpeed;
+            targetSpeed = Mathf.Max(targetSpeed, flightController.CurrentSpeed);
         }
-        // Fallback: Delta distance calculation from rig transform
-        else if (rigTarget != null && Time.deltaTime > 0.0001f)
+
+        // Source 2: Physical CharacterController / Rigidbody forward velocity
+        Vector3 forwardFlat = Vector3.forward;
+        if (vrCamera != null)
+        {
+            forwardFlat = Vector3.ProjectOnPlane(vrCamera.forward, Vector3.up).normalized;
+        }
+        else if (rigTarget != null)
+        {
+            forwardFlat = Vector3.ProjectOnPlane(rigTarget.forward, Vector3.up).normalized;
+        }
+
+        if (characterController != null && characterController.enabled)
+        {
+            float ccForward = Vector3.Dot(characterController.velocity, forwardFlat);
+            if (ccForward > targetSpeed) targetSpeed = ccForward;
+        }
+        else if (rigRigidbody != null && !rigRigidbody.isKinematic)
+        {
+            float rbForward = Vector3.Dot(rigRigidbody.linearVelocity, forwardFlat);
+            if (rbForward > targetSpeed) targetSpeed = rbForward;
+        }
+
+        // Source 3: Transform Position Delta (pure forward displacement per frame)
+        if (rigTarget != null && Time.deltaTime > 0.0001f)
         {
             Vector3 worldDelta = rigTarget.position - lastRigPosition;
             lastRigPosition = rigTarget.position;
 
-            // Forward speed component along VR camera gaze
-            if (vrCamera != null)
+            float deltaForwardSpeed = Vector3.Dot(worldDelta, forwardFlat) / Time.deltaTime;
+            if (deltaForwardSpeed > targetSpeed)
             {
-                Vector3 forwardFlat = Vector3.ProjectOnPlane(vrCamera.forward, Vector3.up).normalized;
-                targetSpeed = Mathf.Max(0f, Vector3.Dot(worldDelta, forwardFlat) / Time.deltaTime);
-            }
-            else
-            {
-                targetSpeed = worldDelta.magnitude / Time.deltaTime;
+                targetSpeed = deltaForwardSpeed;
             }
         }
+
+        // Source 4: Testing Fallback - Keyboard W / Up Arrow
+        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow))
+        {
+            if (targetSpeed < 10f) targetSpeed = 15f; // Simulated test flight forward speed
+        }
+
+        // Clamp to positive forward speed (moving backwards or standing still produces 0 wind)
+        targetSpeed = Mathf.Max(0f, targetSpeed);
 
         // Smooth speed transition
         smoothedForwardSpeed = Mathf.Lerp(smoothedForwardSpeed, targetSpeed, windSmoothingFactor * Time.deltaTime);
@@ -204,7 +389,7 @@ public class FanSerialController : MonoBehaviour
         }
 
         // Normalize speed to 0.0 - 1.0 ratio
-        float speedRatio = Mathf.Clamp01((smoothedForwardSpeed - minSpeedThreshold) / (maxSpeedForFullWind - minSpeedThreshold));
+        float speedRatio = Mathf.Clamp01((smoothedForwardSpeed - minSpeedThreshold) / Mathf.Max(0.01f, maxSpeedForFullWind - minSpeedThreshold));
 
         // Base PWM scaling from minFanStartPWM to maxFanPWM
         int basePWM = Mathf.RoundToInt(Mathf.Lerp(minFanStartPWM, maxFanPWM, speedRatio));
@@ -240,10 +425,14 @@ public class FanSerialController : MonoBehaviour
 
     private void SendFanPWMData()
     {
-        // Only transmit if values have changed or periodically
-        if (currentLeftPWM == lastSentLeft &&
-            currentMiddlePWM == lastSentMiddle &&
-            currentRightPWM == lastSentRight)
+        bool valueChanged = (currentLeftPWM != lastSentLeft ||
+                             currentMiddlePWM != lastSentMiddle ||
+                             currentRightPWM != lastSentRight);
+
+        bool needsHeartbeat = (Time.time - lastSuccessfulTransmitTime >= heartbeatInterval && (currentLeftPWM > 0 || currentMiddlePWM > 0 || currentRightPWM > 0));
+
+        // Only transmit if values changed or if heartbeat interval elapsed
+        if (!valueChanged && !needsHeartbeat)
         {
             return;
         }
@@ -259,10 +448,11 @@ public class FanSerialController : MonoBehaviour
                 lastSentLeft = currentLeftPWM;
                 lastSentMiddle = currentMiddlePWM;
                 lastSentRight = currentRightPWM;
+                lastSuccessfulTransmitTime = Time.time;
 
                 if (showDebugLogs)
                 {
-                    Debug.Log($"[FanSerialController] Sent -> {packet.Trim()} (Speed: {smoothedForwardSpeed:F1} m/s)");
+                    Debug.Log($"[FanSerialController] Sent -> {packet.Trim()} (Forward Speed: {smoothedForwardSpeed:F1} m/s)");
                 }
             }
             catch (Exception e)
@@ -301,9 +491,12 @@ public class FanSerialController : MonoBehaviour
         boxStyle.fontSize = 12;
         boxStyle.normal.textColor = Color.white;
 
-        GUILayout.BeginArea(new Rect(Screen.width - 320, 15, 305, 180), boxStyle);
-        GUILayout.Label("<b>== VR FAN CONTROLLER (COM12) ==</b>");
-        GUILayout.Label($"Port: <b>{portName}</b> | Status: {(serialPort != null && serialPort.IsOpen ? "<color=#00FF00>OPEN</color>" : "<color=#FF5555>CLOSED</color>")}");
+        string displayPort = string.IsNullOrEmpty(activePort) ? (string.IsNullOrEmpty(portName) ? "AUTO" : portName) : activePort;
+        bool isConnected = serialPort != null && serialPort.IsOpen;
+
+        GUILayout.BeginArea(new Rect(Screen.width - 320, 15, 305, 185), boxStyle);
+        GUILayout.Label("<b>== VR FAN CONTROLLER ==</b>");
+        GUILayout.Label($"Port: <b>{displayPort}</b> | Status: {(isConnected ? "<color=#00FF00>CONNECTED</color>" : "<color=#FF5555>SCANNING / CLOSED</color>")}");
         GUILayout.Label($"Rig Forward Speed: <b>{smoothedForwardSpeed:F1} m/s</b>");
         GUILayout.Label($"Middle Fan (Pin 9):  <b>{currentMiddlePWM}</b> / 255");
         GUILayout.Label($"Left Fan   (Pin 10): <b>{currentLeftPWM}</b> / 255");
@@ -335,7 +528,7 @@ public class FanSerialController : MonoBehaviour
                 // Send zero packet before closing
                 serialPort.Write("0,0,0\n");
                 serialPort.Close();
-                Debug.Log($"[FanSerialController] Serial connection to {portName} safely closed.");
+                Debug.Log($"[FanSerialController] Serial connection safely closed.");
             }
             catch (Exception) { }
         }

@@ -1,7 +1,7 @@
 // =========================================================================
 // VR Wind Simulation System - 3-Fan Dynamic Speed & Direction Controller
 // Pins: Left Fan = Pin 10 (PWM), Middle Fan = Pin 9 (PWM), Right Fan = Pin 11 (PWM)
-// Default Baud Rate: 115200 | Port: COM12
+// Baud Rate: 115200 | Default Port: COM15
 // =========================================================================
 
 const int fanMiddlePin = 9;   // Middle Fan (Frontal Wind)
@@ -14,7 +14,7 @@ const int MIN_FAN_PWM = 35;
 
 // --- Safety Watchdog Configuration ---
 unsigned long lastSerialTime = 0;
-const unsigned long SERIAL_TIMEOUT_MS = 1500; // Turn off fans if Unity stops communicating for 1.5s
+const unsigned long SERIAL_TIMEOUT_MS = 2000; // Turn off fans if Unity stops communicating for 2s
 bool debugMode = false;
 
 // --- Serial Buffer ---
@@ -38,10 +38,13 @@ void setup() {
   analogWrite(fanLeftPin, 0);
   analogWrite(fanRightPin, 0);
 
-  Serial.begin(9600);
-  Serial.println(F("--- VR Rig Fan Controller Initialized on COM12 (115200 Baud) ---"));
+  Serial.begin(115200);
+  Serial.println(F("VR_FAN_OK:READY"));
+  Serial.println(F("--- VR Rig Fan Controller Initialized on COM15 (115200 Baud) ---"));
   Serial.println(F("Supported Commands:"));
+  Serial.println(F("  'PING' / '?'  -> Auto-detect handshake ('VR_FAN_OK')"));
   Serial.println(F("  'L,M,R'       -> Discrete PWM 0-255 (e.g. '120,255,120')"));
+  Serial.println(F("  'MOVE_FWD:<0-255>' -> Forward movement PWM"));
   Serial.println(F("  'SPD:<0-100>' -> Speed Percentage (e.g. 'SPD:80')"));
   Serial.println(F("  'W' / 'S'     -> Debug All ON / All OFF"));
   Serial.println(F("  '1','2','3'   -> Individual Fan Tests (Left, Middle, Right)"));
@@ -116,6 +119,13 @@ void parseAndSetFans() {
 
   if (*ptr == '\0') return;
 
+  // --- 0. Auto-Detection / Handshake ---
+  if (strcasecmp(ptr, "PING") == 0 || strcmp(ptr, "?") == 0 ||
+      strcasecmp(ptr, "IDENT") == 0 || strcasecmp(ptr, "VR_FAN_PING") == 0) {
+    Serial.println(F("VR_FAN_OK"));
+    return;
+  }
+
   // --- 1. Manual Debug Commands ---
   if ((ptr[0] == 'W' || ptr[0] == 'w') && ptr[1] == '\0') {
     debugMode = true;
@@ -152,9 +162,24 @@ void parseAndSetFans() {
     return;
   }
 
-  // --- 2. Protocol: "SPD:<0-100>" or "SPD:<0-255>" ---
-  if (strncmp(ptr, "SPD:", 4) == 0 || strncmp(ptr, "spd:", 4) == 0 ||
-      strncmp(ptr, "FAN:", 4) == 0 || strncmp(ptr, "fan:", 4) == 0) {
+  // --- 2. Protocol: MOVE_FWD:<0-255> or FWD:<0-255> ---
+  if (strncasecmp(ptr, "MOVE_FWD:", 9) == 0) {
+    int fwdVal = atoi(ptr + 9);
+    int pwm = (fwdVal <= 100) ? mapToFanPWM(fwdVal, true) : constrain(fwdVal, 0, 255);
+    debugMode = false;
+    applyFanPWM(pwm, pwm, pwm);
+    return;
+  }
+  if (strncasecmp(ptr, "FWD:", 4) == 0) {
+    int fwdVal = atoi(ptr + 4);
+    int pwm = (fwdVal <= 100) ? mapToFanPWM(fwdVal, true) : constrain(fwdVal, 0, 255);
+    debugMode = false;
+    applyFanPWM(pwm, pwm, pwm);
+    return;
+  }
+
+  // --- 3. Protocol: "SPD:<0-100>" or "SPD:<0-255>" ---
+  if (strncasecmp(ptr, "SPD:", 4) == 0 || strncasecmp(ptr, "FAN:", 4) == 0) {
     int speedVal = atoi(ptr + 4);
     // If value <= 100, treat as percent; if > 100, treat as direct PWM
     int pwm = (speedVal <= 100) ? mapToFanPWM(speedVal, true) : constrain(speedVal, 0, 255);

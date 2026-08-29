@@ -1148,8 +1148,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 160ed1bc650f7354881ed7737857c800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FanSerialController
-  portName: COM12
-  baudRate: 9600
+  portName: COM15
+  baudRate: 115200
   enableSerial: 1
   flightController: {fileID: 0}
   rigTarget: {fileID: 0}
