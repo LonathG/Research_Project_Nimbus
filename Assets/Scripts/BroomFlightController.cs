@@ -71,6 +71,12 @@ public class BroomFlightController : MonoBehaviour
     private bool lastGroundedState = false;
     private CollisionFlags lastCollisionFlags = CollisionFlags.None;
 
+    // Public Telemetry Accessors for external controllers (Fans, Lighting, Audio)
+    public float CurrentSpeed => currentSpeed;
+    public float CurrentVerticalSpeed => currentVerticalSpeed;
+    public int TargetThrust => targetThrust;
+    public int TargetAltitude => targetAltitude;
+
     private CharacterController characterController;
     private Rigidbody rb;
 

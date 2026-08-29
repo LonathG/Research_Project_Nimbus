@@ -1054,6 +1054,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1717954561962503725, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1177115936}
+    - targetCorrespondingSourceObject: {fileID: 1717954561962503725, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1177115946}
   m_SourcePrefab: {fileID: 100100000, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
 --- !u!1 &1177115934 stripped
 GameObject:
@@ -1086,7 +1089,6 @@ MonoBehaviour:
   altitudeSmoothTime: 0.15
   minGroundY: 0
   useGroundLimit: 1
-  hoverAtNeutral: 1
   turnSensitivity: 1.2
   tiltThreshold: 10
   rawInputMin: 0
@@ -1134,6 +1136,35 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 1767192434, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
   m_PrefabInstance: {fileID: 1177115933}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1177115946
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1177115934}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 160ed1bc650f7354881ed7737857c800, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FanSerialController
+  portName: COM12
+  baudRate: 9600
+  enableSerial: 1
+  flightController: {fileID: 0}
+  rigTarget: {fileID: 0}
+  vrCamera: {fileID: 0}
+  maxSpeedForFullWind: 25
+  minSpeedThreshold: 0.2
+  minFanStartPWM: 40
+  maxFanPWM: 255
+  windSmoothingFactor: 10
+  enableDirectionalWind: 1
+  maxTiltAngle: 20
+  directionalIntensity: 0.6
+  updateInterval: 0.05
+  showDebugLogs: 0
+  showOnScreenHUD: 1
 --- !u!1 &1270403690
 GameObject:
   m_ObjectHideFlags: 0
@@ -1593,7 +1624,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 3492777613061647161, guid: dd399009ae46bf048b40275fc1612642, type: 3}
+      insertIndex: 4
+      addedObject: {fileID: 1600125632}
   m_SourcePrefab: {fileID: 100100000, guid: dd399009ae46bf048b40275fc1612642, type: 3}
 --- !u!4 &1600125630 stripped
 Transform:
@@ -1605,6 +1639,19 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 3492777613061647161, guid: dd399009ae46bf048b40275fc1612642, type: 3}
   m_PrefabInstance: {fileID: 1600125629}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1600125632
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1600125631}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fff372dbd28ed1849a5e37e98bff9a0b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RingTrigger
+  serialController: {fileID: 0}
 --- !u!1001 &1681938828
 PrefabInstance:
   m_ObjectHideFlags: 0
