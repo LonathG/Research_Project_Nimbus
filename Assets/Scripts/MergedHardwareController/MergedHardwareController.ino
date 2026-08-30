@@ -214,3 +214,4 @@ void parseHapticCommand() {
   analogWrite(hapticPin1, currentHapticIntensity);
   analogWrite(hapticPin2, currentHapticIntensity);
 }
+
