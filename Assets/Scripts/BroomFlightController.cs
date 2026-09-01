@@ -1,12 +1,15 @@
 using UnityEngine;
+using System.Collections;
 using System.IO.Ports;
 using System.Threading;
+using System.Text;
 
 public class BroomFlightController : MonoBehaviour
 {
     [Header("Serial Port Settings")]
+    [Tooltip("COM port for Arduino / ESP hardware.")]
     public string portName = "COM6";
-    public int baudRate = 9600;
+    public int baudRate = 115200;
     public bool enableSerial = true;
 
     [Header("Movement Target")]
@@ -53,11 +56,26 @@ public class BroomFlightController : MonoBehaviour
     [Tooltip("Display an on-screen real-time telemetry HUD in the Game view / VR.")]
     public bool showOnScreenDebug = true;
 
+    // Serial & Threading State (Crash-proof architecture)
     private SerialPort sp;
     private Thread serialThread;
+    private readonly object dataLock = new object();
     private string lastData = "";
-    private bool isRunning = true;
+    private volatile bool isRunning = false;
+    private volatile bool isThreadActive = false;
 
+    // Diagnostics & Metrics
+    private int totalPacketsReceived = 0;
+    private int packetsInLastSecond = 0;
+    private int measuredPacketsPerSec = 0;
+    private float ppsTimer = 0f;
+    private float lastPacketReceivedTime = 0f;
+    private string latestTelemetryRaw = "Waiting for hardware...";
+    private string lastConnectionError = "";
+    private bool portNamesLogged = false;
+    private int consecutiveErrors = 0;
+
+    // Flight Dynamics State
     private float currentSpeed = 0f;
     private float currentVerticalSpeed = 0f;
     private float verticalSpeedVelocity = 0f;
@@ -71,11 +89,18 @@ public class BroomFlightController : MonoBehaviour
     private bool lastGroundedState = false;
     private CollisionFlags lastCollisionFlags = CollisionFlags.None;
 
+    // Cached GUI Styles to prevent native IMGUI memory leaks
+    private GUIStyle cachedBoxStyle;
+    private GUIStyle cachedHeaderStyle;
+    private GUIStyle cachedDataStyle;
+
     // Public Telemetry Accessors for external controllers (Fans, Lighting, Audio)
     public float CurrentSpeed => currentSpeed;
     public float CurrentVerticalSpeed => currentVerticalSpeed;
     public int TargetThrust => targetThrust;
     public int TargetAltitude => targetAltitude;
+    public int PacketsPerSecond => measuredPacketsPerSec;
+    public bool IsSerialConnected => sp != null && sp.IsOpen && isRunning;
 
     private CharacterController characterController;
     private Rigidbody rb;
@@ -89,7 +114,7 @@ public class BroomFlightController : MonoBehaviour
             else vrCamera = transform;
         }
 
-        // 2. Resolve Rig Target (CRITICAL: Do not move Camera directly because XR tracking overrides it)
+        // 2. Resolve Rig Target (Do not move Camera directly because XR tracking overrides it)
         if (rigTarget == null)
         {
             if (transform == vrCamera && transform.parent != null)
@@ -113,7 +138,7 @@ public class BroomFlightController : MonoBehaviour
             Debug.Log($"[BroomFlight Setup] CharacterController found: {(characterController != null ? $"YES (Enabled: {characterController.enabled}, Height: {characterController.height}, Center: {characterController.center})" : "NO")}");
             Debug.Log($"[BroomFlight Setup] Rigidbody found: {(rb != null ? $"YES (isKinematic: {rb.isKinematic}, useGravity: {rb.useGravity})" : "NO")}");
 
-            // Scan and report any other locomotion/movement scripts that might fight BroomFlight
+            // Scan and report any other locomotion/movement scripts
             MonoBehaviour[] allScripts = rigTarget.GetComponents<MonoBehaviour>();
             foreach (var s in allScripts)
             {
@@ -122,16 +147,30 @@ public class BroomFlightController : MonoBehaviour
                     string scriptName = s.GetType().Name;
                     if (scriptName.Contains("Move") || scriptName.Contains("Locomotion") || scriptName.Contains("Gravity") || scriptName.Contains("Driver"))
                     {
-                        Debug.LogWarning($"[BroomFlight Conflict Warning] Detected locomotion script '{scriptName}' on RigTarget. Make sure other movement scripts do not apply gravity/locomotion simultaneously!");
+                        Debug.LogWarning($"[BroomFlight Conflict Warning] Detected locomotion script '{scriptName}' on RigTarget. Ensure gravity/movement scripts do not fight BroomFlight.");
                     }
                 }
             }
         }
 
-        // 4. Connect Serial Hardware
+        // 4. Connect Serial Hardware with Auto-Reconnect Coroutine
         if (enableSerial)
         {
-            InitSerial();
+            StartCoroutine(AutoConnectLoop());
+        }
+    }
+
+    private IEnumerator AutoConnectLoop()
+    {
+        while (enableSerial)
+        {
+            if (sp == null || !sp.IsOpen || !isThreadActive)
+            {
+                InitSerial();
+            }
+
+            // Non-aggressive 4-second check to avoid driver lockups
+            yield return new WaitForSeconds(4.0f);
         }
     }
 
@@ -139,49 +178,183 @@ public class BroomFlightController : MonoBehaviour
     {
         try
         {
-            string[] availablePorts = SerialPort.GetPortNames();
-            if (debugLogs)
+            CloseSerialConnection();
+
+            if (!portNamesLogged && debugLogs)
             {
-                Debug.Log($"[BroomFlight] Available Serial Ports: {string.Join(", ", availablePorts)}");
+                portNamesLogged = true;
+                try
+                {
+                    string[] availablePorts = SerialPort.GetPortNames();
+                    Debug.Log($"[BroomFlight] Available Serial Ports on PC: [{string.Join(", ", availablePorts)}]");
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[BroomFlight] Could not query COM ports: {ex.Message}");
+                }
             }
 
-            sp = new SerialPort(portName, baudRate);
-            sp.ReadTimeout = 10;
+            Debug.Log($"[BroomFlight] Attempting connection on {portName} @ {baudRate} baud...");
+
+            sp = new SerialPort(portName, baudRate)
+            {
+                ReadTimeout = 50,    // Short timeout so thread loop responds to shutdown quickly
+                WriteTimeout = 50,
+                DtrEnable = true,
+                RtsEnable = true
+            };
+
             sp.Open();
 
-            serialThread = new Thread(ReadSerialData);
-            serialThread.IsBackground = true;
+            isRunning = true;
+            lastConnectionError = "";
+            consecutiveErrors = 0;
+
+            serialThread = new Thread(ReadSerialData)
+            {
+                IsBackground = true,
+                Name = "BroomFlight_SerialReader"
+            };
             serialThread.Start();
-            Debug.Log($"[BroomFlight] Broom Hardware Connected on {portName}!");
+
+            Debug.Log($"<color=#00FF66><b>[BroomFlight] Successfully Connected to Hardware on {portName} ({baudRate} baud)!</b></color>");
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"[BroomFlight] Serial Error on {portName}: {e.Message}. Make sure Arduino is connected to {portName} or test using W/Space keys!");
+            lastConnectionError = e.Message;
+            if (debugLogs)
+            {
+                Debug.LogWarning($"[BroomFlight] Serial Connection Pending on {portName}: {e.Message}");
+            }
+            CloseSerialConnection();
         }
     }
 
+    /// <summary>
+    /// Thread-safe, non-blocking serial packet collector.
+    /// Accumulates raw incoming bytes without blocking ReadLine hangs or mid-line buffer clearing.
+    /// </summary>
     void ReadSerialData()
     {
-        while (isRunning && sp != null && sp.IsOpen)
+        isThreadActive = true;
+        StringBuilder lineBuilder = new StringBuilder(128);
+
+        while (isRunning)
         {
             try
             {
-                string line = sp.ReadLine();
-                if (!string.IsNullOrEmpty(line))
+                if (sp != null && sp.IsOpen)
                 {
-                    lastData = line;
+                    // Check available bytes to prevent synchronous kernel hang
+                    int bytesAvailable = sp.BytesToRead;
+                    if (bytesAvailable > 0)
+                    {
+                        // Prevent extreme buffer pileup if computer hitched
+                        if (bytesAvailable > 512)
+                        {
+                            sp.DiscardInBuffer();
+                            lineBuilder.Clear();
+                            continue;
+                        }
+
+                        for (int i = 0; i < bytesAvailable; i++)
+                        {
+                            int byteRead = sp.ReadByte();
+                            if (byteRead == -1) break;
+
+                            char c = (char)byteRead;
+                            if (c == '\n')
+                            {
+                                string completeLine = lineBuilder.ToString();
+                                lineBuilder.Clear();
+
+                                if (!string.IsNullOrEmpty(completeLine))
+                                {
+                                    lock (dataLock)
+                                    {
+                                        lastData = completeLine;
+                                    }
+                                }
+                            }
+                            else if (c != '\r')
+                            {
+                                if (lineBuilder.Length < 256)
+                                {
+                                    lineBuilder.Append(c);
+                                }
+                                else
+                                {
+                                    lineBuilder.Clear(); // Discard oversized garbage
+                                }
+                            }
+                        }
+
+                        consecutiveErrors = 0;
+                    }
+                    else
+                    {
+                        // No bytes currently in buffer; sleep briefly to yield CPU
+                        Thread.Sleep(5);
+                    }
+                }
+                else
+                {
+                    Thread.Sleep(50);
                 }
             }
-            catch (System.Exception) { }
+            catch (System.TimeoutException)
+            {
+                // Expected when waiting for next sensor burst
+            }
+            catch (System.IO.IOException ioEx)
+            {
+                consecutiveErrors++;
+                if (consecutiveErrors < 3 && debugLogs)
+                {
+                    Debug.LogWarning($"[BroomFlight Serial IO] {ioEx.Message}");
+                }
+                Thread.Sleep(20);
+            }
+            catch (System.InvalidOperationException)
+            {
+                Thread.Sleep(50);
+            }
+            catch (System.Exception ex)
+            {
+                consecutiveErrors++;
+                if (consecutiveErrors < 3 && debugLogs)
+                {
+                    Debug.LogWarning($"[BroomFlight Serial Error] {ex.Message}");
+                }
+                Thread.Sleep(20);
+            }
         }
+
+        isThreadActive = false;
     }
 
     void Update()
     {
-        // Parse incoming Arduino serial inputs (Forward Thrust & Altitude FSRs)
+        // 1. Process incoming packet telemetry from background thread
         ParseSerialData();
 
-        // Keyboard inputs
+        // 2. Measure Packets Per Second (PPS)
+        ppsTimer += Time.deltaTime;
+        if (ppsTimer >= 1.0f)
+        {
+            measuredPacketsPerSec = packetsInLastSecond;
+            packetsInLastSecond = 0;
+            ppsTimer = 0f;
+        }
+
+        // 3. Stale Data Watchdog: If no fresh hardware packet received within 350ms, smoothly zero inputs
+        if (Time.time - lastPacketReceivedTime > 0.35f)
+        {
+            serialThrust = Mathf.RoundToInt(Mathf.MoveTowards(serialThrust, 0, 150f * Time.deltaTime));
+            serialAltitude = Mathf.RoundToInt(Mathf.MoveTowards(serialAltitude, 0, 150f * Time.deltaTime));
+        }
+
+        // 4. Keyboard Fallback Input (Testing without hardware)
         int keyboardThrust = 0;
         int keyboardAltitude = 0;
         bool isKeyboardDescending = false;
@@ -204,15 +377,15 @@ public class BroomFlightController : MonoBehaviour
             }
         }
 
-        // Combine Serial Hardware and Keyboard Inputs (Neither overrides the other with 0s)
+        // Combine Serial Hardware and Keyboard Inputs (Max of both)
         targetThrust = Mathf.Max(serialThrust, keyboardThrust);
         targetAltitude = Mathf.Max(serialAltitude, keyboardAltitude);
 
-        // Smooth incoming sensor inputs to eliminate frame-rate gap jitter
+        // Smooth inputs to eliminate frame-rate jitter
         smoothThrustInput = Mathf.Lerp(smoothThrustInput, targetThrust, 15f * Time.deltaTime);
         smoothAltitudeInput = Mathf.Lerp(smoothAltitudeInput, targetAltitude, 15f * Time.deltaTime);
 
-        // 0. Check Grounded State
+        // 5. Check Grounded State
         bool isGrounded = false;
         if (characterController != null && characterController.enabled)
         {
@@ -223,14 +396,13 @@ public class BroomFlightController : MonoBehaviour
             isGrounded = true;
         }
 
-        // 1. Calculate Target & Current Horizontal Speed
-        // Automatically handles decimal multipliers (e.g. 0.5 -> 50m/s) or direct max speed (e.g. 30 -> 30m/s)
+        // 6. Calculate Forward Flight Speed
         float maxSpeed = (speedMultiplier <= 2.0f) ? (speedMultiplier * 100f) : speedMultiplier;
         float targetSpeed = (smoothThrustInput / 100f) * maxSpeed;
         float lerpFactor = (targetSpeed > currentSpeed) ? accelerationSmooth : decelerationSmooth;
         currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, lerpFactor);
 
-        // 2. Calculate Vertical Climb vs Smooth Fall/Descent Velocity
+        // 7. Calculate Vertical Ascent vs Smooth Glide/Descent
         float targetVertSpeed = 0f;
         if (smoothAltitudeInput > 2.0f)
         {
@@ -240,45 +412,46 @@ public class BroomFlightController : MonoBehaviour
         }
         else if (isKeyboardDescending)
         {
-            // Fast descent override key pressed (Q / Left Ctrl)
+            // Fast descent override (Q / Left Ctrl)
             targetVertSpeed = -maxDescendSpeed;
         }
         else
         {
-            // No pressure registered on FSR 2 -> Gradually & smoothly descend back to ground
+            // No squeeze -> Smooth glide down to ground
             if (isGrounded)
             {
-                targetVertSpeed = -0.5f; // Soft grounding force on floor
+                targetVertSpeed = -0.5f;
             }
             else
             {
-                targetVertSpeed = -gravityFallSpeed; // Steady smooth glide down to ground
+                targetVertSpeed = -gravityFallSpeed;
             }
         }
 
-        // Silky smooth vertical speed transition
+        // Smooth vertical velocity damping
         currentVerticalSpeed = Mathf.SmoothDamp(currentVerticalSpeed, targetVertSpeed, ref verticalSpeedVelocity, altitudeSmoothTime);
 
-        // Soft Touchdown Anti-Bounce: When touching ground, clamp downward speed so physics doesn't bounce
+        // Anti-Bounce on touchdown
         if (isGrounded && currentVerticalSpeed < -0.8f && smoothAltitudeInput <= 2.0f)
         {
             currentVerticalSpeed = -0.5f;
         }
 
-        // Debug Periodic Console Summary
+        // Periodic Diagnostic Console Log (Every 1.5s)
         logTimer += Time.deltaTime;
-        if (logTimer > 1.0f)
+        if (logTimer > 1.5f)
         {
             if (debugLogs)
             {
-                Debug.Log($"[BroomFlight Status] Thrust: {targetThrust}% | Altitude: {targetAltitude}% | HSpeed: {currentSpeed:F1} | VSpeed: {currentVerticalSpeed:F1} | Grounded: {isGrounded}");
+                string status = (sp != null && sp.IsOpen) ? $"CONNECTED ({measuredPacketsPerSec} PPS)" : "DISCONNECTED";
+                Debug.Log($"[BroomFlight Status] {status} | Thrust: {targetThrust}% | Alt: {targetAltitude}% | HSpeed: {currentSpeed:F1}m/s | VSpeed: {currentVerticalSpeed:F1}m/s | Ground: {isGrounded}");
             }
             logTimer = 0;
         }
 
         if (rigTarget == null || vrCamera == null) return;
 
-        // STEERING (Head Tilt Rotation)
+        // 8. STEERING (Head Tilt Roll)
         float tiltZ = vrCamera.localEulerAngles.z;
         if (tiltZ > 180) tiltZ -= 360;
 
@@ -288,10 +461,9 @@ public class BroomFlightController : MonoBehaviour
             rigTarget.Rotate(0, turnAmount, 0);
         }
 
-        // MOVEMENT (Horizontal Forward Flight + Vertical Ascent/Descent)
+        // 9. MOVEMENT (Horizontal Velocity + Vertical Ascent)
         Vector3 moveDelta = Vector3.zero;
 
-        // Forward flight vector along horizontal gaze direction (pure horizontal, camera pitch does NOT fight altitude climb)
         if (currentSpeed > 0.001f)
         {
             Vector3 forwardDir = Vector3.ProjectOnPlane(vrCamera.forward, Vector3.up).normalized;
@@ -301,10 +473,9 @@ public class BroomFlightController : MonoBehaviour
             }
         }
 
-        // Add Vertical velocity delta (Climb / Gravity)
         moveDelta.y += currentVerticalSpeed * Time.deltaTime;
 
-        // Clamp height if ground limit is enabled and no CharacterController physics collision is active
+        // Clamp height if ground limit is active and no CharacterController
         if (useGroundLimit && (characterController == null || !characterController.enabled) && (rigTarget.position.y + moveDelta.y) < minGroundY)
         {
             float clampDeltaY = minGroundY - rigTarget.position.y;
@@ -315,10 +486,10 @@ public class BroomFlightController : MonoBehaviour
             }
         }
 
-        // Log grounded state changes
+        // Log grounded state transitions
         if (debugLogs && isGrounded != lastGroundedState)
         {
-            Debug.Log($"[BroomFlight Grounded Toggle] isGrounded changed to: {isGrounded} | RigY: {rigTarget.position.y:F3} | VertSpeed: {currentVerticalSpeed:F2} | TargetAlt: {targetAltitude}%");
+            Debug.Log($"[BroomFlight Grounded Toggle] isGrounded: {isGrounded} | RigY: {rigTarget.position.y:F2} | VertSpeed: {currentVerticalSpeed:F2}");
             lastGroundedState = isGrounded;
         }
 
@@ -348,37 +519,66 @@ public class BroomFlightController : MonoBehaviour
     {
         if (!showOnScreenDebug) return;
 
-        GUIStyle boxStyle = new GUIStyle(GUI.skin.box);
-        boxStyle.alignment = TextAnchor.UpperLeft;
-        boxStyle.fontSize = 13;
-        boxStyle.normal.textColor = Color.white;
+        // Lazy initialize cached GUIStyles to prevent native IMGUI memory leaks
+        if (cachedBoxStyle == null)
+        {
+            cachedBoxStyle = new GUIStyle(GUI.skin.box)
+            {
+                alignment = TextAnchor.UpperLeft,
+                fontSize = 12
+            };
+            cachedBoxStyle.normal.textColor = Color.white;
+        }
 
-        GUILayout.BeginArea(new Rect(15, 15, 340, 230), boxStyle);
-        GUILayout.Label("<b>== BROOM FLIGHT TELEMETRY ==</b>");
-        GUILayout.Label($"Serial: {(sp != null && sp.IsOpen ? $"<color=#00FF00>CONNECTED ({portName})</color>" : "<color=#FFFF00>DISCONNECTED (Keys Active)</color>")}");
-        GUILayout.Label($"Target Thrust: <b>{targetThrust}%</b> | Speed: <b>{currentSpeed:F1} m/s</b>");
-        GUILayout.Label($"Target Altitude: <b>{targetAltitude}%</b> | VertSpeed: <b>{currentVerticalSpeed:F1} m/s</b>");
-        GUILayout.Label($"Rig Y Position: <b>{(rigTarget != null ? rigTarget.position.y.ToString("F2") : "NULL")} m</b>");
-        GUILayout.Label($"Grounded: <b>{(lastGroundedState ? "<color=#00FF00>TRUE (Grounded)</color>" : "<color=#00FFFF>AIRBORNE</color>")}</b>");
-        GUILayout.Label($"Physics Target: <b>{(rigTarget != null ? rigTarget.name : "NULL")}</b>");
-        GUILayout.Label($"Collider: {(characterController != null ? $"CharacterController ({lastCollisionFlags})" : (rb != null ? "Rigidbody" : "Transform"))}");
+        GUILayout.BeginArea(new Rect(15, 15, 420, 280), cachedBoxStyle);
+        GUILayout.Label("<b><size=14>== PROJECT NIMBUS: BROOM FLIGHT ==</size></b>");
+
+        if (sp != null && sp.IsOpen)
+        {
+            GUILayout.Label($"Serial: <color=#00FF66><b>CONNECTED ({portName} @ {baudRate})</b></color> [{measuredPacketsPerSec} PPS | Total: {totalPacketsReceived}]");
+        }
+        else
+        {
+            string err = string.IsNullOrEmpty(lastConnectionError) ? "Searching hardware..." : lastConnectionError;
+            if (err.Length > 32) err = err.Substring(0, 29) + "...";
+            GUILayout.Label($"Serial: <color=#FFAA00><b>DISCONNECTED ({portName})</b></color> <size=10><i>[{err}]</i></size>");
+        }
+
+        GUILayout.Label($"Raw String: <size=11><color=#FFFF88>{latestTelemetryRaw}</color></size>");
+        GUILayout.Label($"Thrust: <b>{targetThrust}%</b> (Serial: {serialThrust}%) | Speed: <b>{currentSpeed:F1} m/s</b>");
+        GUILayout.Label($"Altitude: <b>{targetAltitude}%</b> (Serial: {serialAltitude}%) | VertSpeed: <b>{currentVerticalSpeed:F1} m/s</b>");
+        GUILayout.Label($"Rig Position Y: <b>{(rigTarget != null ? rigTarget.position.y.ToString("F2") : "NULL")} m</b>");
+        GUILayout.Label($"Grounded: <b>{(lastGroundedState ? "<color=#00FF66>TRUE (Grounded)</color>" : "<color=#00FFFF>AIRBORNE (Flying)</color>")}</b>");
+        GUILayout.Label($"Movement Target: <b>{(rigTarget != null ? rigTarget.name : "NULL")}</b> | Collider: {(characterController != null ? $"CharacterController ({lastCollisionFlags})" : (rb != null ? "Rigidbody" : "Transform"))}");
+        GUILayout.Label($"FPS: <b>{(1f / Time.unscaledDeltaTime):F0}</b> | Thread Active: <b>{isThreadActive}</b>");
         GUILayout.EndArea();
     }
 
     void ParseSerialData()
     {
-        if (string.IsNullOrEmpty(lastData)) return;
+        string rawLine = null;
+        lock (dataLock)
+        {
+            if (!string.IsNullOrEmpty(lastData))
+            {
+                rawLine = lastData;
+                lastData = null;
+            }
+        }
 
-        // Consume line once
-        string cleanData = lastData.Trim();
-        lastData = null;
+        if (string.IsNullOrEmpty(rawLine)) return;
 
+        string cleanData = rawLine.Trim();
         if (string.IsNullOrEmpty(cleanData)) return;
 
-        // Ignore Arduino header/banner info
+        latestTelemetryRaw = cleanData;
+        totalPacketsReceived++;
+        packetsInLastSecond++;
+
+        // Ignore Arduino banner / header comments
         if (cleanData.StartsWith("-") || cleanData.StartsWith("=") || cleanData.StartsWith("*") || cleanData.StartsWith("#") || !HasDigits(cleanData))
         {
-            if (debugLogs) Debug.Log("[BroomFlight Arduino Info] " + cleanData);
+            if (debugLogs) Debug.Log("[BroomFlight Arduino Banner] " + cleanData);
             return;
         }
 
@@ -388,7 +588,7 @@ public class BroomFlightController : MonoBehaviour
             bool parsedThrust = false;
             bool parsedAltitude = false;
 
-            // 1. Prioritize processed percentage keys ("Broom_Speed", "Broom_Altitude")
+            // 1. Processed percentage keys ("Broom_Speed", "Broom_Altitude", "Speed", "Altitude")
             foreach (string item in items)
             {
                 string[] parts = item.Split(':');
@@ -411,7 +611,7 @@ public class BroomFlightController : MonoBehaviour
                 }
             }
 
-            // 2. Secondary fallback for raw keys if processed keys weren't found
+            // 2. Secondary fallback for raw ADC sensor keys ("Raw_Thrust", "Raw_Altitude")
             if (!parsedThrust || !parsedAltitude)
             {
                 foreach (string item in items)
@@ -437,22 +637,32 @@ public class BroomFlightController : MonoBehaviour
                 }
             }
 
-            // 3. Fallback for unlabeled comma-separated numbers (e.g. "300, 700" -> thrust, altitude)
+            // 3. Fallback for unlabeled comma-separated numbers (e.g. "300, 700")
             if (!parsedThrust && !parsedAltitude && items.Length >= 1)
             {
                 if (float.TryParse(items[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val1))
                 {
                     serialThrust = ScaleSensorValue(val1, rawThrustMax);
+                    parsedThrust = true;
                 }
                 if (items.Length >= 2 && float.TryParse(items[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val2))
                 {
                     serialAltitude = ScaleSensorValue(val2, rawAltitudeMax);
+                    parsedAltitude = true;
                 }
+            }
+
+            if (parsedThrust || parsedAltitude)
+            {
+                lastPacketReceivedTime = Time.time;
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogError("[BroomFlight] Parse Error: '" + cleanData + "' | " + e.Message);
+            if (debugLogs)
+            {
+                Debug.LogError($"[BroomFlight] Parse Error: '{cleanData}' | {e.Message}");
+            }
         }
     }
 
@@ -478,16 +688,71 @@ public class BroomFlightController : MonoBehaviour
         return false;
     }
 
+    void OnDisable()
+    {
+        CloseSerialConnection();
+    }
+
+    void OnDestroy()
+    {
+        CloseSerialConnection();
+    }
+
     void OnApplicationQuit()
     {
+        CloseSerialConnection();
+    }
+
+    /// <summary>
+    /// Safely terminates the background thread BEFORE closing the underlying serial port handle.
+    /// This prevents native Win32 kernel crashes and mono thread abort exceptions.
+    /// </summary>
+    private void CloseSerialConnection()
+    {
         isRunning = false;
+
+        // 1. Give the reader thread up to 500ms to exit cooperatively
         if (serialThread != null && serialThread.IsAlive)
         {
-            serialThread.Abort();
+            try
+            {
+                serialThread.Join(500);
+            }
+            catch (System.Exception ex)
+            {
+                if (debugLogs) Debug.LogWarning($"[BroomFlight] Thread Join Warning: {ex.Message}");
+            }
+            finally
+            {
+                serialThread = null;
+            }
         }
-        if (sp != null && sp.IsOpen)
+
+        // 2. Safely close and dispose the SerialPort stream
+        if (sp != null)
         {
-            sp.Close();
+            try
+            {
+                if (sp.IsOpen)
+                {
+                    sp.DiscardInBuffer();
+                    sp.DiscardOutBuffer();
+                    sp.Close();
+                }
+            }
+            catch (System.Exception) { }
+
+            try
+            {
+                sp.Dispose();
+            }
+            catch (System.Exception) { }
+            finally
+            {
+                sp = null;
+            }
         }
+
+        isThreadActive = false;
     }
 }

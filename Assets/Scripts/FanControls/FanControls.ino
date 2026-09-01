@@ -1,7 +1,7 @@
 // =========================================================================
 // VR Wind Simulation System - 3-Fan Dynamic Speed & Direction Controller
 // Pins: Left Fan = Pin 10 (PWM), Middle Fan = Pin 9 (PWM), Right Fan = Pin 11 (PWM)
-// Baud Rate: 115200 | Default Port: COM15
+// Baud Rate: 9600 | Default Port: COM12
 // =========================================================================
 
 const int fanMiddlePin = 9;   // Middle Fan (Frontal Wind)
@@ -38,9 +38,9 @@ void setup() {
   analogWrite(fanLeftPin, 0);
   analogWrite(fanRightPin, 0);
 
-  Serial.begin(115200);
+  Serial.begin(9600);
   Serial.println(F("VR_FAN_OK:READY"));
-  Serial.println(F("--- VR Rig Fan Controller Initialized on COM15 (115200 Baud) ---"));
+  Serial.println(F("--- VR Rig Fan Controller Initialized on COM12 (9600 Baud) ---"));
   Serial.println(F("Supported Commands:"));
   Serial.println(F("  'PING' / '?'  -> Auto-detect handshake ('VR_FAN_OK')"));
   Serial.println(F("  'L,M,R'       -> Discrete PWM 0-255 (e.g. '120,255,120')"));

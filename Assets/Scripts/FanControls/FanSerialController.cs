@@ -12,11 +12,11 @@ public class FanSerialController : MonoBehaviour
     public static FanSerialController Instance { get; private set; }
 
     [Header("Serial Port Settings (Arduino Fans)")]
-    [Tooltip("Target COM port where the Arduino Fan controller is connected (e.g. COM15).")]
-    public string portName = "COM15";
-    [Tooltip("If enabled, automatically scans other COM ports if the specified port fails.")]
-    public bool autoDetectPort = true;
-    public int baudRate = 115200;
+    [Tooltip("Target COM port where the Arduino Fan controller is connected (e.g. COM12).")]
+    public string portName = "COM12";
+    [Tooltip("If enabled, automatically scans other COM ports ONLY if the specified port fails (excluding Broom port).")]
+    public bool autoDetectPort = false;
+    public int baudRate = 9600;
     public bool enableSerial = true;
 
     [Header("Speed Reference & Sources")]
@@ -161,7 +161,7 @@ public class FanSerialController : MonoBehaviour
         if (isConnecting) yield break;
         isConnecting = true;
 
-        // 1. First priority: Try user-specified port (e.g. COM15)
+        // 1. First priority: Open user-specified port (e.g. COM12)
         if (!string.IsNullOrEmpty(portName) && !portName.Equals("AUTO", StringComparison.OrdinalIgnoreCase))
         {
             if (TryOpenPort(portName))
@@ -178,8 +178,10 @@ public class FanSerialController : MonoBehaviour
             yield break;
         }
 
-        // 2. Auto-detect across all available ports
+        // 2. Auto-detect across candidate ports (ignoring the broom port if known)
+        string broomPort = (flightController != null && !string.IsNullOrEmpty(flightController.portName)) ? flightController.portName : "COM6";
         string[] availablePorts = SerialPort.GetPortNames();
+
         if (availablePorts == null || availablePorts.Length == 0)
         {
             if (showDebugLogs) Debug.LogWarning("[FanSerialController] No COM ports found. Will retry...");
@@ -187,22 +189,14 @@ public class FanSerialController : MonoBehaviour
             yield break;
         }
 
-        // If only 1 port exists, directly connect to it
-        if (availablePorts.Length == 1)
-        {
-            string singlePort = availablePorts[0];
-            if (TryOpenPort(singlePort))
-            {
-                activePort = singlePort;
-                portName = singlePort;
-                isConnecting = false;
-                yield break;
-            }
-        }
-
-        // Multiple ports: Probe each available port with handshake
+        // Multiple ports: Probe each candidate port with handshake (skipping the broom's port)
         foreach (string candidatePort in availablePorts)
         {
+            if (candidatePort.Equals(broomPort, StringComparison.OrdinalIgnoreCase))
+            {
+                continue; // Do not touch the broom controller's port!
+            }
+
             if (TryProbePortForFans(candidatePort))
             {
                 activePort = candidatePort;
@@ -212,21 +206,6 @@ public class FanSerialController : MonoBehaviour
                 yield break;
             }
             yield return new WaitForSeconds(0.05f);
-        }
-
-        // Fallback: Try first accessible candidate port
-        if (serialPort == null || !serialPort.IsOpen)
-        {
-            foreach (string candidatePort in availablePorts)
-            {
-                if (TryOpenPort(candidatePort))
-                {
-                    activePort = candidatePort;
-                    portName = candidatePort;
-                    Debug.Log($"[FanSerialController] Connected to candidate port {candidatePort}.");
-                    break;
-                }
-            }
         }
 
         isConnecting = false;
@@ -241,6 +220,7 @@ public class FanSerialController : MonoBehaviour
             testPort.ReadTimeout = 150;
             testPort.WriteTimeout = 100;
             testPort.DtrEnable = true;
+            testPort.RtsEnable = true;
             testPort.Open();
 
             // Send ping
@@ -262,12 +242,18 @@ public class FanSerialController : MonoBehaviour
             }
 
             testPort.Close();
+            testPort.Dispose();
         }
         catch (Exception)
         {
-            if (testPort != null && testPort.IsOpen)
+            if (testPort != null)
             {
-                try { testPort.Close(); } catch { }
+                try 
+                { 
+                    if (testPort.IsOpen) testPort.Close(); 
+                    testPort.Dispose(); 
+                } 
+                catch { }
             }
         }
         return false;
@@ -277,16 +263,21 @@ public class FanSerialController : MonoBehaviour
     {
         try
         {
-            if (serialPort != null && serialPort.IsOpen)
-            {
-                serialPort.Close();
-            }
+            CloseSerialConnection();
 
-            serialPort = new SerialPort(port, baudRate);
-            serialPort.WriteTimeout = 50;
-            serialPort.ReadTimeout = 10;
-            serialPort.DtrEnable = true;
+            serialPort = new SerialPort(port, baudRate)
+            {
+                WriteTimeout = 50,
+                ReadTimeout = 50
+            };
             serialPort.Open();
+
+            try
+            {
+                serialPort.DtrEnable = true;
+                serialPort.RtsEnable = true;
+            }
+            catch { }
 
             Debug.Log($"[FanSerialController] Successfully opened Fan serial connection on {port} ({baudRate} baud).");
             return true;
@@ -297,6 +288,7 @@ public class FanSerialController : MonoBehaviour
             {
                 Debug.LogWarning($"[FanSerialController] Could not open {port}: {e.Message}");
             }
+            CloseSerialConnection();
             return false;
         }
     }
@@ -507,6 +499,7 @@ public class FanSerialController : MonoBehaviour
     void OnDisable()
     {
         StopAllFans();
+        CloseSerialConnection();
     }
 
     void OnDestroy()
@@ -521,16 +514,28 @@ public class FanSerialController : MonoBehaviour
 
     private void CloseSerialConnection()
     {
-        if (serialPort != null && serialPort.IsOpen)
+        if (serialPort != null)
         {
             try
             {
-                // Send zero packet before closing
-                serialPort.Write("0,0,0\n");
-                serialPort.Close();
-                Debug.Log($"[FanSerialController] Serial connection safely closed.");
+                if (serialPort.IsOpen)
+                {
+                    // Send zero packet before closing
+                    try { serialPort.Write("0,0,0\n"); } catch { }
+                    serialPort.Close();
+                    Debug.Log($"[FanSerialController] Serial connection safely closed.");
+                }
             }
             catch (Exception) { }
+            try
+            {
+                serialPort.Dispose();
+            }
+            catch (Exception) { }
+            finally
+            {
+                serialPort = null;
+            }
         }
     }
 }

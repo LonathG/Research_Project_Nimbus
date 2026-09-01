@@ -11,29 +11,30 @@
 //     - Haptic Motor 1 (PWM)    -> Digital Pin 3
 //     - Haptic Motor 2 (PWM)    -> Digital Pin 5
 // -------------------------------------------------------------------------
-// Baud Rate: 9600 (Synchronized with Unity BroomFlightController.cs)
+// Baud Rate: 115200 (Synchronized with Unity BroomFlightController.cs)
 // =========================================================================
 
 // --- Pin Definitions ---
-const int thrustFsrPin   = A0; // FSR 1: Forward Thrust (Analog A0)
+const int thrustFsrPin = A0;   // FSR 1: Forward Thrust (Analog A0)
 const int altitudeFsrPin = A1; // FSR 2: Altitude / Lift (Analog A1)
-const int hapticPin1     = 3;  // Haptic Motor 1 (PWM Pin 3)
-const int hapticPin2     = 5;  // Haptic Motor 2 (PWM Pin 5)
+const int hapticPin1 = 3;      // Haptic Motor 1 (PWM Pin 3)
+const int hapticPin2 = 5;      // Haptic Motor 2 (PWM Pin 5)
 
 // --- Calibration Thresholds (Pressure Handle) ---
-const int thrustDeadzone   = 15;  // Below this value is considered resting/zero
-const int thrustMax        = 350; // Max expected reading for FSR 1 (0-100% thrust)
-const int altitudeDeadzone = 25;  // Below this value is considered resting/zero
-const int altitudeMax      = 700; // Max expected reading for FSR 2 (0-100% altitude)
+const int thrustDeadzone = 15; // Below this value is considered resting/zero
+const int thrustMax = 350;     // Max expected reading for FSR 1 (0-100% thrust)
+const int altitudeDeadzone = 25; // Below this value is considered resting/zero
+const int altitudeMax = 700; // Max expected reading for FSR 2 (0-100% altitude)
 
 // --- Haptic Tuning ---
 // Minimum PWM to overcome motor static friction when speed > 0
-const int MIN_HAPTIC_PWM = 45; 
+const int MIN_HAPTIC_PWM = 100;
 const int MAX_HAPTIC_PWM = 255;
-bool autoHapticFromSpeed = true; // Auto-scale vibration with forward squeeze speed
+bool autoHapticFromSpeed =
+    true; // Auto-scale vibration with forward squeeze speed
 
 // --- Low-Pass Filter State ---
-float smoothThrust   = 0;
+float smoothThrust = 0;
 float smoothAltitude = 0;
 
 // --- Haptic State ---
@@ -54,13 +55,15 @@ void setup() {
   analogWrite(hapticPin1, 0);
   analogWrite(hapticPin2, 0);
 
-  // 2. Initialize Serial Connection
-  Serial.begin(9600);
+  // 2. Initialize Serial Connection (High-speed 115200 baud for zero buffer
+  // delay)
+  Serial.begin(115200);
   Serial.println(F("--- UNIFIED HARDWARE CONTROLLER INITIALIZED ---"));
   Serial.println(F("Speed -> Dynamic Haptic Scaling: ENABLED"));
   Serial.println(F("Pressure Handle: Thrust(A0), Altitude(A1)"));
   Serial.println(F("Haptic Jacket  : Motor 1(Pin 3), Motor 2(Pin 5)"));
-  Serial.println(F("Commands: 'MOVE_FWD:<0-255>', 'AUTO', 'w' (max), 's' (stop), '+', '-'"));
+  Serial.println(F(
+      "Commands: 'MOVE_FWD:<0-255>', 'AUTO', 'w' (max), 's' (stop), '+', '-'"));
 }
 
 void loop() {
@@ -84,33 +87,38 @@ void loop() {
 
 // Maps 0-100% speed to a proportional PWM intensity (MIN_HAPTIC_PWM to 255)
 int mapSpeedToHapticPWM(int speedPct) {
-  if (speedPct <= 0) return 0;
+  if (speedPct <= 0)
+    return 0;
   speedPct = constrain(speedPct, 0, 100);
   return map(speedPct, 1, 100, MIN_HAPTIC_PWM, MAX_HAPTIC_PWM);
 }
 
-// Reads FSRs, applies EMA smoothing, maps to 0-100%, updates haptics, and transmits telemetry
+// Reads FSRs, applies EMA smoothing, maps to 0-100%, updates haptics, and
+// transmits telemetry
 void readSensorsAndTransmit() {
   // 1. Read FSR 1 (Thrust on A0)
   int rawThrust = analogRead(thrustFsrPin);
 
   // 2. Read FSR 2 (Altitude on A1) with ADC settling dummy read
-  analogRead(altitudeFsrPin); 
+  analogRead(altitudeFsrPin);
   int rawAltitude = analogRead(altitudeFsrPin);
 
   // 3. Low-Pass Exponential Moving Average Filter (eliminates noise/jitter)
-  smoothThrust   = (smoothThrust * 0.75f) + (rawThrust * 0.25f);
+  smoothThrust = (smoothThrust * 0.75f) + (rawThrust * 0.25f);
   smoothAltitude = (smoothAltitude * 0.75f) + (rawAltitude * 0.25f);
 
   // 4. Map smoothed readings to 0-100% with deadzones
   int speedPercent = 0;
   if (smoothThrust > thrustDeadzone) {
-    speedPercent = constrain(map((int)smoothThrust, thrustDeadzone, thrustMax, 0, 100), 0, 100);
+    speedPercent = constrain(
+        map((int)smoothThrust, thrustDeadzone, thrustMax, 0, 100), 0, 100);
   }
 
   int altPercent = 0;
   if (smoothAltitude > altitudeDeadzone) {
-    altPercent = constrain(map((int)smoothAltitude, altitudeDeadzone, altitudeMax, 0, 100), 0, 100);
+    altPercent = constrain(
+        map((int)smoothAltitude, altitudeDeadzone, altitudeMax, 0, 100), 0,
+        100);
   }
 
   // 5. DYNAMIC HAPTIC RESPONSE: Scale vibration power as speed increases
@@ -120,7 +128,8 @@ void readSensorsAndTransmit() {
     analogWrite(hapticPin2, currentHapticIntensity);
   }
 
-  // 6. Print telemetry formatted for Unity BroomFlightController.cs + Serial Plotter
+  // 6. Print telemetry formatted for Unity BroomFlightController.cs + Serial
+  // Plotter
   Serial.print(F("Raw_Thrust:"));
   Serial.print(rawThrust);
   Serial.print(F(",Broom_Speed:"));
@@ -159,8 +168,10 @@ void recvWithEndMarker() {
 // Parses incoming commands from Unity or Serial Monitor
 void parseHapticCommand() {
   char *ptr = receivedChars;
-  while (*ptr == ' ' || *ptr == '\t') ptr++;
-  if (*ptr == '\0') return;
+  while (*ptr == ' ' || *ptr == '\t')
+    ptr++;
+  if (*ptr == '\0')
+    return;
 
   // 1. Re-enable automatic speed-to-haptic coupling
   if (strcasecmp(ptr, "AUTO") == 0 || strcasecmp(ptr, "SPEED") == 0) {
@@ -173,9 +184,9 @@ void parseHapticCommand() {
   if (strncasecmp(ptr, "MOVE_FWD:", 9) == 0) {
     autoHapticFromSpeed = false; // Unity explicit override
     int val = atoi(ptr + 9);
-    currentHapticIntensity = (val <= 100) ? mapSpeedToHapticPWM(val) : constrain(val, 0, 255);
-  }
-  else if (strncasecmp(ptr, "HAPTIC:", 7) == 0) {
+    currentHapticIntensity =
+        (val <= 100) ? mapSpeedToHapticPWM(val) : constrain(val, 0, 255);
+  } else if (strncasecmp(ptr, "HAPTIC:", 7) == 0) {
     autoHapticFromSpeed = false;
     currentHapticIntensity = constrain(atoi(ptr + 7), 0, 255);
   }
@@ -186,17 +197,15 @@ void parseHapticCommand() {
       autoHapticFromSpeed = false;
       currentHapticIntensity = 255;
       Serial.println(F("[MANUAL] Haptics set to MAX (255)"));
-    }
-    else if (key == 's' || key == 'S') {
+    } else if (key == 's' || key == 'S') {
       autoHapticFromSpeed = false;
       currentHapticIntensity = 0;
-      Serial.println(F("[MANUAL] Haptics STOPPED (0). Send 'AUTO' to resume speed sync."));
-    }
-    else if (key == '+') {
+      Serial.println(
+          F("[MANUAL] Haptics STOPPED (0). Send 'AUTO' to resume speed sync."));
+    } else if (key == '+') {
       autoHapticFromSpeed = false;
       currentHapticIntensity = constrain(currentHapticIntensity + 25, 0, 255);
-    }
-    else if (key == '-') {
+    } else if (key == '-') {
       autoHapticFromSpeed = false;
       currentHapticIntensity = constrain(currentHapticIntensity - 25, 0, 255);
     }
@@ -214,4 +223,3 @@ void parseHapticCommand() {
   analogWrite(hapticPin1, currentHapticIntensity);
   analogWrite(hapticPin2, currentHapticIntensity);
 }
-

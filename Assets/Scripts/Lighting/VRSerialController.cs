@@ -24,28 +24,31 @@ public class VRSerialController : MonoBehaviour
 
     private void InitializeSerial()
     {
-        // --- TEMPORARY DEBUGGING: List all available COM ports ---
-        string[] ports = SerialPort.GetPortNames();
-        Debug.Log($"[VRSerialController] Found {ports.Length} available COM ports:");
-        foreach (string port in ports)
-        {
-            Debug.Log($"[VRSerialController] -> {port}");
-        }
-        // ---------------------------------------------------------
-
         try
         {
-            serialPort = new SerialPort(portName, baudRate);
-            
-            // Short timeout prevents Unity from freezing if something goes wrong
-            serialPort.WriteTimeout = 50; 
+            CloseSerial();
+
+            serialPort = new SerialPort(portName, baudRate)
+            {
+                WriteTimeout = 50,
+                ReadTimeout = 50
+            };
             
             serialPort.Open();
+
+            try
+            {
+                serialPort.DtrEnable = true;
+                serialPort.RtsEnable = true;
+            }
+            catch { }
+
             Debug.Log($"[VRSerialController] Successfully connected to Arduino on {portName}");
         }
         catch (Exception e)
         {
             Debug.LogError($"[VRSerialController] Failed to open {portName}. Is the Arduino plugged in? Is the Serial Monitor closed? Error: {e.Message}");
+            CloseSerial();
         }
     }
 
@@ -136,6 +139,11 @@ public class VRSerialController : MonoBehaviour
     // ==========================================
     // --- CONNECTION MANAGEMENT ---
     // ==========================================
+    void OnDisable()
+    {
+        CloseSerial();
+    }
+
     void OnDestroy()
     {
         CloseSerial();
@@ -148,16 +156,28 @@ public class VRSerialController : MonoBehaviour
 
     private void CloseSerial()
     {
-        if (serialPort != null && serialPort.IsOpen)
+        if (serialPort != null)
         {
             try
             {
-                serialPort.Close();
-                Debug.Log($"[VRSerialController] Closed connection to {portName}");
+                if (serialPort.IsOpen)
+                {
+                    serialPort.Close();
+                    Debug.Log($"[VRSerialController] Closed connection to {portName}");
+                }
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[VRSerialController] Error closing serial port: {e.Message}");
+            }
+            try
+            {
+                serialPort.Dispose();
+            }
+            catch { }
+            finally
+            {
+                serialPort = null;
             }
         }
     }
