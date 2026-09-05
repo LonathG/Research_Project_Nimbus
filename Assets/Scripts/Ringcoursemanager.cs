@@ -24,6 +24,10 @@ public class RingCourseManager : MonoBehaviour
     [Header("HUD")]
     public RingTimerHUD timerHUD;
 
+    [Header("Celebration")]
+    [Tooltip("Fires confetti around the pitch on course completion. Leave empty to skip.")]
+    public ConfettiCelebration confettiCelebration;
+
     private readonly List<Ring> activeRings = new List<Ring>();
     private int nextWaypointIndex = 0;
     private int ringsPassed = 0;
@@ -118,6 +122,12 @@ public class RingCourseManager : MonoBehaviour
         if (timerHUD != null)
         {
             timerHUD.StopTimer();
+        }
+
+        // Fire confetti celebration
+        if (confettiCelebration != null)
+        {
+            confettiCelebration.Fire();
         }
 
         Debug.Log($"[RingCourseManager] Course complete! {ringsPassed} rings" +

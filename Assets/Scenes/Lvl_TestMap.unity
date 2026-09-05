@@ -695,12 +695,9 @@ MonoBehaviour:
   - {fileID: 2010719320}
   - {fileID: 831203928}
   - {fileID: 927453534}
-  - {fileID: 1904987960}
-  - {fileID: 1765139518}
-  - {fileID: 649334726}
-  - {fileID: 110629442}
   ringPrefab: {fileID: 3161340217250994255, guid: 6984998813124094fbced6f72de152cd, type: 3}
   timerHUD: {fileID: 487171174}
+  confettiCelebration: {fileID: 1028783511}
 --- !u!4 &593948958
 Transform:
   m_ObjectHideFlags: 0
@@ -1060,6 +1057,58 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1092970985}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1028783510
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1028783512}
+  - component: {fileID: 1028783511}
+  m_Layer: 0
+  m_Name: ConfettiCelebration
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1028783511
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1028783510}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4328cc536502c764990c802545251b5b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ConfettiCelebration
+  confettiPrefab: {fileID: 6244068588056629641, guid: 257bbc9adf7977d4494702438d9eb69e, type: 3}
+  pitchCentre: {x: 0, y: 0, z: 0}
+  groundY: 1
+  radiusX: 80
+  radiusZ: 40
+  launcherCount: 14
+  loop: 0
+  lifetime: 100
+--- !u!4 &1028783512
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1028783510}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1068615806 stripped
 GameObject:
@@ -1745,3 +1794,4 @@ SceneRoots:
   - {fileID: 514689011}
   - {fileID: 1092970985}
   - {fileID: 593948958}
+  - {fileID: 1028783512}
