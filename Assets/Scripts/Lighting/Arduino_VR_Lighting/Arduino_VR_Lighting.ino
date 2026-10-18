@@ -2,7 +2,8 @@
 
 // ==========================================
 // --- HARDWARE & SYSTEM CONFIGURATION ---
-// ==========================================\
+// Baud Rate: 115200 | Target Port: COM8
+// ==========================================
 
 #define PIN_MAIN    6        
 #define PIN_TIMER   7
@@ -63,7 +64,7 @@ void setup() {
 
     Serial.println(F("======================================="));
     Serial.println(F(" VR Event-to-Visual Mapping System"));
-    Serial.println(F(" Hardware: Arduino Uno"));
+    Serial.println(F(" Hardware: Arduino Uno | Port: COM8"));
     Serial.println(F("======================================="));
 
     FastLED.addLeds<LED_TYPE, PIN_MAIN, COLOR_ORDER>(mainLeds, MAIN_NUM_LEDS)
@@ -144,6 +145,7 @@ void parseData() {
     // Check Continuous State: "C:SPD:XX"
     if (strncmp(receivedChars, "C:SPD:", 6) == 0) {
         const char* valStr = &receivedChars[6];
+        while (*valStr == ' ' || *valStr == '\t') valStr++;
         
         if (isNumeric(valStr)) {
             int spd = atoi(valStr);
@@ -223,6 +225,16 @@ void parseData() {
 }
 
 void triggerEvent(EventType type) {
+    // 1. Strict Priority: Ring Passed (EVENT_RNG) cannot be interrupted by Boost!
+    if (activeEvent == EVENT_RNG && type == EVENT_BST) {
+        Serial.println(F("[PRIORITY] Ring Passed active -> Boost ignored"));
+        return;
+    }
+    // 2. Collision (EVENT_COL) cannot be interrupted by Boost
+    if (activeEvent == EVENT_COL && type == EVENT_BST) {
+        return;
+    }
+
     activeEvent = type;
     eventStartTime = currentMillis; // Record exactly when it started
 }
@@ -249,8 +261,20 @@ void checkEventExpiration() {
 // --- EVENT-TO-VISUAL MAPPING LAYER ---
 // ==========================================
 void updateLEDs() {
-    // 1. Base Speed Layer
-    runSpeedAnimation();
+    // 1. Base Speed Layer OR Discrete Event Layer
+    // When an event is active (like Ring Passed or Collision), it gets 100% EXCLUSIVE priority!
+    if (activeEvent != EVENT_NONE) {
+        switch(activeEvent) {
+            case EVENT_COL: runCollisionEffect(); break;
+            case EVENT_BST: runBoostEffect(); break;
+            case EVENT_DNG: runDangerEffect(); break;
+            case EVENT_WIN: runVictoryEffect(); break;
+            case EVENT_RNG: runRingEffect(); break;
+        }
+    } else {
+        // Only run continuous speed/boost animation when no discrete event is playing
+        runSpeedAnimation();
+    }
 
     // 2. Time Bar Layer
     if (isTimerActive) {
@@ -303,44 +327,55 @@ void updateLEDs() {
         }
     }
 
-    // 3. Temporary Event Layer LAST
-    if (activeEvent != EVENT_NONE) {
-        switch(activeEvent) {
-            case EVENT_COL: runCollisionEffect(); break;
-            case EVENT_BST: runBoostEffect(); break;
-            case EVENT_DNG: runDangerEffect(); break;
-            case EVENT_WIN: runVictoryEffect(); break;
-            case EVENT_RNG: runRingEffect(); break;
-        }
-    }
-    
-    // 4. Show
+    // 3. Show
     FastLED.show();
 }
 
-// --- CONTINUOUS: SPEED ---
+// --- CONTINUOUS: SPEED / DYNAMIC BOOST LIGHTS ---
 void runSpeedAnimation() {
-    if (currentSpeed == 0) {
-        fadeToBlackBy(mainLeds, MAIN_NUM_LEDS, 60); 
+    if (currentSpeed <= 0) {
+        fadeToBlackBy(mainLeds, MAIN_NUM_LEDS, 50); 
         return;
     }
     
-    for(int i = 0; i < MAIN_NUM_LEDS; i++) {
-        mainLeds[i].r = scale8(mainLeds[i].r, 120); 
-        mainLeds[i].g = scale8(mainLeds[i].g, 120); 
-        mainLeds[i].b = scale8(mainLeds[i].b, 220); 
-    }
+    // Trail fade: faster fade at higher speeds for sharp boost streaks
+    uint8_t fadeSpeed = map(currentSpeed, 1, 100, 35, 80);
+    fadeToBlackBy(mainLeds, MAIN_NUM_LEDS, fadeSpeed);
     
     static float virtualPhase = 0.0;
     
-    // Smooth speed mapping: 
-    // Speed 1 -> ~0.05 pixels per frame
-    // Speed 100 -> ~0.60 pixels per frame
-    float increment = map((long)currentSpeed, 1, 100, 5, 60) / 100.0; 
+    // Dynamic Speed Mapping:
+    // Speed 1   -> ~0.4 pixels per frame (~16 px/sec) - gentle wind stream
+    // Speed 50  -> ~2.5 pixels per frame (~100 px/sec) - steady boost stream
+    // Speed 100 -> ~6.0 pixels per frame (~240 px/sec) - high velocity boost streak!
+    float speedRatio = ((float)currentSpeed / 100.0f);
+    float increment = 0.35f + (speedRatio * speedRatio * 5.65f);
     virtualPhase += increment;
-    int pos = MAIN_NUM_LEDS - 1 - ((int)virtualPhase % MAIN_NUM_LEDS);
+    if (virtualPhase >= 10000.0f) virtualPhase -= 10000.0f;
     
-    mainLeds[pos] = CRGB::White;
+    // Interleaved boost streams (2 streams at medium speed, 3 streams at high speed)
+    int streamCount = (currentSpeed > 60) ? 3 : 2;
+    int spacing = MAIN_NUM_LEDS / streamCount;
+    
+    for (int s = 0; s < streamCount; s++) {
+        int headPos = ((int)(virtualPhase + s * spacing)) % MAIN_NUM_LEDS;
+        // Move backwards (99 -> 0) so boost energy rushes toward/past player as they fly forward
+        int pos = MAIN_NUM_LEDS - 1 - headPos;
+        
+        if (pos >= 0 && pos < MAIN_NUM_LEDS) {
+            // Alternating Cyan and White boost spark head
+            CRGB headColor = ((currentMillis / 40 + s) % 2 == 0) ? CRGB::Cyan : CRGB::White;
+            mainLeds[pos] = headColor;
+            
+            // Trailing cyan/sky-blue tail that lengthens at higher speed
+            if (currentSpeed > 20 && pos + 1 < MAIN_NUM_LEDS) {
+                mainLeds[pos + 1] = CRGB(0, 180, 255); // Vibrant Cyan-Blue
+            }
+            if (currentSpeed > 55 && pos + 2 < MAIN_NUM_LEDS) {
+                mainLeds[pos + 2] = CRGB(0, 90, 200);  // Deep trailing glow
+            }
+        }
+    }
 }
 
 // --- DISCRETE: COLLISION ---
@@ -358,13 +393,16 @@ void runBoostEffect() {
     
     fadeToBlackBy(mainLeds, MAIN_NUM_LEDS, 60); 
     
-    int pos = (elapsed * MAIN_NUM_LEDS * 3) / BST_DURATION; 
-    pos = pos % MAIN_NUM_LEDS;
+    int forwardPos = (elapsed * MAIN_NUM_LEDS * 3) / BST_DURATION; 
+    forwardPos = forwardPos % MAIN_NUM_LEDS;
+    int pos = MAIN_NUM_LEDS - 1 - forwardPos; // Match direction 99 -> 0
     
-    if ((elapsed / 30) % 2 == 0) {
-        mainLeds[pos] = CRGB::Cyan;
-    } else {
-        mainLeds[pos] = CRGB::White;
+    if (pos >= 0 && pos < MAIN_NUM_LEDS) {
+        if ((elapsed / 30) % 2 == 0) {
+            mainLeds[pos] = CRGB::Cyan;
+        } else {
+            mainLeds[pos] = CRGB::White;
+        }
     }
 }
 
@@ -402,8 +440,7 @@ void runRingEffect() {
         int pos = MAIN_NUM_LEDS - 1 - forwardPos;
         
         if (pos >= 0 && pos < MAIN_NUM_LEDS) {
-            mainLeds[pos] = ringColor;\
-            
+            mainLeds[pos] = ringColor;
             
             // Draw a few extra pixels for a thicker head, trailing backwards (higher indices)
             if (pos + 1 < MAIN_NUM_LEDS) mainLeds[pos + 1] = ringColor;

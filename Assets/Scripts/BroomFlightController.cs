@@ -35,22 +35,84 @@ public class BroomFlightController : MonoBehaviour
     public float minGroundY = 0.0f;
     public bool useGroundLimit = true;
 
-    [Header("Steering Settings")]
+    [Header("Steering Settings - General")]
+    [Tooltip("Maximum yaw turning speed in degrees per second when squeezing Left/Right Turn FSRs or pressing A/D.")]
+    public float turnSpeed = 60.0f;
+    [Tooltip("Smoothing response speed for FSR turning transitions.")]
+    public float turnSmoothSpeed = 15.0f;
+    [Tooltip("Enable steering via FSR 3 (Left Turn) and FSR 4 (Right Turn).")]
+    public bool enableFsrSteering = true;
+    [Tooltip("If true, scales raw sensor readings with the manual FSR 3 and FSR 4 threshold settings below instead of relying on Arduino presets.")]
+    public bool preferRawSteeringSensors = true;
+    [Tooltip("Enable steering via VR head tilt roll.")]
+    public bool enableHeadTiltSteering = true;
+    [Tooltip("Sensitivity multiplier for head tilt roll steering.")]
     public float turnSensitivity = 1.5f;
+    [Tooltip("Minimum head tilt roll angle before tilt steering kicks in.")]
     public float tiltThreshold = 8f;
 
-    [Header("Sensor Mapping Settings")]
-    [Tooltip("Minimum expected raw sensor value from hardware (deadzone).")]
-    public float rawInputMin = 15f;
-    [Tooltip("Maximum expected raw sensor value for Thrust FSR 1 (e.g. 350).")]
+    [Header("FSR 3 Settings (Left Turn / Pin A2)")]
+    [Tooltip("Minimum raw ADC deadzone for FSR 3. Sensor values below this are ignored (resting baseline).")]
+    public float fsr3MinThreshold = 15f;
+    [Tooltip("Maximum raw ADC value for FSR 3 that corresponds to 100% full left turn.")]
+    public float rawLeftTurnMax = 350f;
+    [Tooltip("Sensitivity multiplier for Left Turn FSR 3 (lower this, e.g. 0.7, if Left is too sensitive; raise it if too weak).")]
+    [Range(0.1f, 3.0f)]
+    public float fsr3Sensitivity = 1.0f;
+    [Tooltip("Response curve exponent for FSR 3 (1.0 = linear, 1.5 - 2.0 = softer gentle squeeze, ramps up when pressed harder).")]
+    [Range(0.5f, 3.0f)]
+    public float fsr3ResponseCurve = 1.0f;
+
+    [Header("FSR 4 Settings (Right Turn / Pin A3)")]
+    [Tooltip("Minimum raw ADC deadzone for FSR 4. Sensor values below this are ignored (resting baseline).")]
+    public float fsr4MinThreshold = 15f;
+    [Tooltip("Maximum raw ADC value for FSR 4 that corresponds to 100% full right turn.")]
+    public float rawRightTurnMax = 350f;
+    [Tooltip("Sensitivity multiplier for Right Turn FSR 4 (lower this, e.g. 0.7, if Right is too sensitive; raise it if too weak).")]
+    [Range(0.1f, 3.0f)]
+    public float fsr4Sensitivity = 1.0f;
+    [Tooltip("Response curve exponent for FSR 4 (1.0 = linear, 1.5 - 2.0 = softer gentle squeeze, ramps up when pressed harder).")]
+    [Range(0.5f, 3.0f)]
+    public float fsr4ResponseCurve = 1.0f;
+
+    [Header("FSR 1 Settings (Forward Thrust / Pin A0)")]
+    [Tooltip("Minimum raw ADC deadzone for FSR 1. Sensor values below this are ignored (resting baseline).")]
+    public float fsr1MinThreshold = 15f;
+    [Tooltip("Maximum raw ADC value for FSR 1 that corresponds to 100% full thrust.")]
     public float rawThrustMax = 350f;
-    [Tooltip("Maximum expected raw sensor value for Altitude FSR 2 (e.g. 700).")]
+    [Tooltip("Sensitivity multiplier for Thrust FSR 1.")]
+    [Range(0.1f, 3.0f)]
+    public float fsr1Sensitivity = 1.0f;
+    [Tooltip("Response curve exponent for FSR 1 (1.0 = linear, 1.5 - 2.0 = softer gentle squeeze, ramps up when pressed harder).")]
+    [Range(0.5f, 3.0f)]
+    public float fsr1ResponseCurve = 1.0f;
+
+    [Header("FSR 2 Settings (Altitude / Climb / Pin A1)")]
+    [Tooltip("Minimum raw ADC deadzone for FSR 2. Sensor values below this are ignored (resting baseline).")]
+    public float fsr2MinThreshold = 270f;
+    [Tooltip("Maximum raw ADC value for FSR 2 that corresponds to 100% full climb.")]
     public float rawAltitudeMax = 700f;
+    [Tooltip("Sensitivity multiplier for Altitude FSR 2.")]
+    [Range(0.1f, 3.0f)]
+    public float fsr2Sensitivity = 1.0f;
+    [Tooltip("Response curve exponent for FSR 2 (1.0 = linear, 1.5 - 2.0 = softer gentle squeeze, ramps up when pressed harder).")]
+    [Range(0.5f, 3.0f)]
+    public float fsr2ResponseCurve = 1.0f;
+
+    [Header("Thrust & Altitude Calibration Mode")]
+    [Tooltip("If true, scales raw sensor readings with the manual FSR 1 and FSR 2 threshold settings above instead of relying on Arduino presets.")]
+    public bool preferRawThrustAltitudeSensors = true;
+    [Tooltip("Legacy fallback minimum expected raw sensor value (used if legacy autoScale is called).")]
+    public float rawInputMin = 15f;
     [Tooltip("Automatically scale hardware values to 0-100% flight thrust & altitude.")]
     public bool autoScaleSensorInput = true;
 
+    // Convenience property aliases for backwards compatibility
+    public float rawThrustMin { get => fsr1MinThreshold; set => fsr1MinThreshold = value; }
+    public float rawAltitudeMin { get => fsr2MinThreshold; set => fsr2MinThreshold = value; }
+
     [Header("Testing & Debug Fallback")]
-    [Tooltip("Allow pressing W/Up to thrust, Space/E to climb, Q/Ctrl to descend for testing without hardware.")]
+    [Tooltip("Allow pressing W/Up (thrust), Space/E (climb), Q/Ctrl (descend), A/Left (turn left), D/Right (turn right) without hardware.")]
     public bool enableKeyboardFallback = true;
     public bool debugLogs = true;
     [Tooltip("Display an on-screen real-time telemetry HUD in the Game view / VR.")]
@@ -81,10 +143,22 @@ public class BroomFlightController : MonoBehaviour
     private float verticalSpeedVelocity = 0f;
     private float smoothThrustInput = 0f;
     private float smoothAltitudeInput = 0f;
+    private float smoothTurnInput = 0f;
     private int serialThrust = 0;
     private int serialAltitude = 0;
+    private int serialLeftTurn = 0;
+    private int serialRightTurn = 0;
     private int targetThrust = 0;
     private int targetAltitude = 0;
+    private int targetLeftTurn = 0;
+    private int targetRightTurn = 0;
+
+    // Live raw sensor readings for real-time calibration & HUD display
+    private float rawThrust = 0f;
+    private float rawAltitude = 0f;
+    private float rawLeftTurn = 0f;
+    private float rawRightTurn = 0f;
+
     private float logTimer = 0f;
     private bool lastGroundedState = false;
     private CollisionFlags lastCollisionFlags = CollisionFlags.None;
@@ -99,6 +173,13 @@ public class BroomFlightController : MonoBehaviour
     public float CurrentVerticalSpeed => currentVerticalSpeed;
     public int TargetThrust => targetThrust;
     public int TargetAltitude => targetAltitude;
+    public int TargetLeftTurn => targetLeftTurn;
+    public int TargetRightTurn => targetRightTurn;
+    public float RawLeftTurn => rawLeftTurn;
+    public float RawRightTurn => rawRightTurn;
+    public float RawThrust => rawThrust;
+    public float RawAltitude => rawAltitude;
+    public float SmoothTurnInput => smoothTurnInput;
     public int PacketsPerSecond => measuredPacketsPerSec;
     public bool IsSerialConnected => sp != null && sp.IsOpen && isRunning;
 
@@ -352,11 +433,15 @@ public class BroomFlightController : MonoBehaviour
         {
             serialThrust = Mathf.RoundToInt(Mathf.MoveTowards(serialThrust, 0, 150f * Time.deltaTime));
             serialAltitude = Mathf.RoundToInt(Mathf.MoveTowards(serialAltitude, 0, 150f * Time.deltaTime));
+            serialLeftTurn = Mathf.RoundToInt(Mathf.MoveTowards(serialLeftTurn, 0, 150f * Time.deltaTime));
+            serialRightTurn = Mathf.RoundToInt(Mathf.MoveTowards(serialRightTurn, 0, 150f * Time.deltaTime));
         }
 
         // 4. Keyboard Fallback Input (Testing without hardware)
         int keyboardThrust = 0;
         int keyboardAltitude = 0;
+        int keyboardLeftTurn = 0;
+        int keyboardRightTurn = 0;
         bool isKeyboardDescending = false;
 
         if (enableKeyboardFallback)
@@ -375,15 +460,31 @@ public class BroomFlightController : MonoBehaviour
             {
                 isKeyboardDescending = true;
             }
+
+            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
+            {
+                keyboardLeftTurn = 100;
+            }
+
+            if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow))
+            {
+                keyboardRightTurn = 100;
+            }
         }
 
         // Combine Serial Hardware and Keyboard Inputs (Max of both)
         targetThrust = Mathf.Max(serialThrust, keyboardThrust);
         targetAltitude = Mathf.Max(serialAltitude, keyboardAltitude);
+        targetLeftTurn = Mathf.Max(serialLeftTurn, keyboardLeftTurn);
+        targetRightTurn = Mathf.Max(serialRightTurn, keyboardRightTurn);
 
         // Smooth inputs to eliminate frame-rate jitter
         smoothThrustInput = Mathf.Lerp(smoothThrustInput, targetThrust, 15f * Time.deltaTime);
         smoothAltitudeInput = Mathf.Lerp(smoothAltitudeInput, targetAltitude, 15f * Time.deltaTime);
+
+        // Calculate net steering input (-1.0 for full Left, +1.0 for full Right)
+        float rawTurnInput = ((float)targetRightTurn - (float)targetLeftTurn) / 100f;
+        smoothTurnInput = Mathf.Lerp(smoothTurnInput, rawTurnInput, turnSmoothSpeed * Time.deltaTime);
 
         // 5. Check Grounded State
         bool isGrounded = false;
@@ -444,21 +545,37 @@ public class BroomFlightController : MonoBehaviour
             if (debugLogs)
             {
                 string status = (sp != null && sp.IsOpen) ? $"CONNECTED ({measuredPacketsPerSec} PPS)" : "DISCONNECTED";
-                Debug.Log($"[BroomFlight Status] {status} | Thrust: {targetThrust}% | Alt: {targetAltitude}% | HSpeed: {currentSpeed:F1}m/s | VSpeed: {currentVerticalSpeed:F1}m/s | Ground: {isGrounded}");
+                Debug.Log($"[BroomFlight Status] {status} | Thrust(FSR1): Raw {rawThrust:F0} -> {targetThrust}% | Alt(FSR2): Raw {rawAltitude:F0} -> {targetAltitude}% | FSR3(L): Raw {rawLeftTurn:F0} -> {targetLeftTurn}% | FSR4(R): Raw {rawRightTurn:F0} -> {targetRightTurn}% | Speed: {currentSpeed:F1}m/s");
             }
             logTimer = 0;
         }
 
         if (rigTarget == null || vrCamera == null) return;
 
-        // 8. STEERING (Head Tilt Roll)
-        float tiltZ = vrCamera.localEulerAngles.z;
-        if (tiltZ > 180) tiltZ -= 360;
+        // 8. STEERING (FSR Handle Sensors + Head Tilt Roll)
+        float totalTurnDelta = 0f;
 
-        if (Mathf.Abs(tiltZ) > tiltThreshold)
+        // FSR Steering (Left / Right Pressure Sensors)
+        if (enableFsrSteering && Mathf.Abs(smoothTurnInput) > 0.005f)
         {
-            float turnAmount = -tiltZ * turnSensitivity * Time.deltaTime;
-            rigTarget.Rotate(0, turnAmount, 0);
+            totalTurnDelta += smoothTurnInput * turnSpeed * Time.deltaTime;
+        }
+
+        // Head Tilt Roll Steering (VR Immersion)
+        if (enableHeadTiltSteering && vrCamera != null)
+        {
+            float tiltZ = vrCamera.localEulerAngles.z;
+            if (tiltZ > 180f) tiltZ -= 360f;
+
+            if (Mathf.Abs(tiltZ) > tiltThreshold)
+            {
+                totalTurnDelta += -tiltZ * turnSensitivity * Time.deltaTime;
+            }
+        }
+
+        if (Mathf.Abs(totalTurnDelta) > 0.0001f)
+        {
+            rigTarget.Rotate(0f, totalTurnDelta, 0f);
         }
 
         // 9. MOVEMENT (Horizontal Velocity + Vertical Ascent)
@@ -530,7 +647,7 @@ public class BroomFlightController : MonoBehaviour
             cachedBoxStyle.normal.textColor = Color.white;
         }
 
-        GUILayout.BeginArea(new Rect(15, 15, 420, 280), cachedBoxStyle);
+        GUILayout.BeginArea(new Rect(15, 15, 470, 345), cachedBoxStyle);
         GUILayout.Label("<b><size=14>== PROJECT NIMBUS: BROOM FLIGHT ==</size></b>");
 
         if (sp != null && sp.IsOpen)
@@ -545,12 +662,13 @@ public class BroomFlightController : MonoBehaviour
         }
 
         GUILayout.Label($"Raw String: <size=11><color=#FFFF88>{latestTelemetryRaw}</color></size>");
-        GUILayout.Label($"Thrust: <b>{targetThrust}%</b> (Serial: {serialThrust}%) | Speed: <b>{currentSpeed:F1} m/s</b>");
-        GUILayout.Label($"Altitude: <b>{targetAltitude}%</b> (Serial: {serialAltitude}%) | VertSpeed: <b>{currentVerticalSpeed:F1} m/s</b>");
-        GUILayout.Label($"Rig Position Y: <b>{(rigTarget != null ? rigTarget.position.y.ToString("F2") : "NULL")} m</b>");
-        GUILayout.Label($"Grounded: <b>{(lastGroundedState ? "<color=#00FF66>TRUE (Grounded)</color>" : "<color=#00FFFF>AIRBORNE (Flying)</color>")}</b>");
-        GUILayout.Label($"Movement Target: <b>{(rigTarget != null ? rigTarget.name : "NULL")}</b> | Collider: {(characterController != null ? $"CharacterController ({lastCollisionFlags})" : (rb != null ? "Rigidbody" : "Transform"))}");
-        GUILayout.Label($"FPS: <b>{(1f / Time.unscaledDeltaTime):F0}</b> | Thread Active: <b>{isThreadActive}</b>");
+        GUILayout.Label($"Thrust (FSR 1): Raw <b>{rawThrust:F0}</b> [{fsr1MinThreshold:F0}..{rawThrustMax:F0}] -> <b>{targetThrust}%</b> | Speed: <b>{currentSpeed:F1} m/s</b>");
+        GUILayout.Label($"Altitude (FSR 2): Raw <b>{rawAltitude:F0}</b> [{fsr2MinThreshold:F0}..{rawAltitudeMax:F0}] -> <b>{targetAltitude}%</b> | VertSpeed: <b>{currentVerticalSpeed:F1} m/s</b>");
+        GUILayout.Label($"FSR 3 (Left Turn): Raw <b>{rawLeftTurn:F0}</b> [{fsr3MinThreshold:F0}..{rawLeftTurnMax:F0}] -> <b>{targetLeftTurn}%</b> (Sens: {fsr3Sensitivity:F1})");
+        GUILayout.Label($"FSR 4 (Right Turn): Raw <b>{rawRightTurn:F0}</b> [{fsr4MinThreshold:F0}..{rawRightTurnMax:F0}] -> <b>{targetRightTurn}%</b> (Sens: {fsr4Sensitivity:F1})");
+        GUILayout.Label($"Net Steering: <b>{smoothTurnInput:F2}</b> {(smoothTurnInput < -0.05f ? "<color=#00FFFF><-- TURNING LEFT</color>" : (smoothTurnInput > 0.05f ? "<color=#00FF66>TURNING RIGHT --></color>" : "<color=#888888>CENTERED</color>"))}");
+        GUILayout.Label($"Rig Y: <b>{(rigTarget != null ? rigTarget.position.y.ToString("F2") : "NULL")} m</b> | Grounded: <b>{(lastGroundedState ? "<color=#00FF66>TRUE</color>" : "<color=#00FFFF>AIRBORNE</color>")}</b>");
+        GUILayout.Label($"Target: <b>{(rigTarget != null ? rigTarget.name : "NULL")}</b> | FPS: <b>{(1f / Time.unscaledDeltaTime):F0}</b>");
         GUILayout.EndArea();
     }
 
@@ -587,8 +705,30 @@ public class BroomFlightController : MonoBehaviour
             string[] items = cleanData.Split(',');
             bool parsedThrust = false;
             bool parsedAltitude = false;
+            bool parsedLeftTurn = false;
+            bool parsedRightTurn = false;
 
-            // 1. Processed percentage keys ("Broom_Speed", "Broom_Altitude", "Speed", "Altitude")
+            bool hasRawThrust = false;
+            bool hasRawAltitude = false;
+            bool hasRawLeftTurn = false;
+            bool hasRawRightTurn = false;
+
+            bool hasBroomThrust = false;
+            bool hasBroomAltitude = false;
+            bool hasBroomLeftTurn = false;
+            bool hasBroomRightTurn = false;
+
+            float readRawThrust = 0f;
+            float readRawAltitude = 0f;
+            float readRawLeftTurn = 0f;
+            float readRawRightTurn = 0f;
+
+            float readBroomThrust = 0f;
+            float readBroomAltitude = 0f;
+            float readBroomLeftTurn = 0f;
+            float readBroomRightTurn = 0f;
+
+            // 1. Scan key-value pairs
             foreach (string item in items)
             {
                 string[] parts = item.Split(':');
@@ -597,62 +737,158 @@ public class BroomFlightController : MonoBehaviour
                     string key = parts[0].Trim().ToLower();
                     if (float.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val))
                     {
-                        if (key == "broom_speed" || key == "speed")
+                        // Raw sensor readings
+                        if (key == "raw_thrust" || key == "rawthrust" || key == "fsr1" || key == "raw_fsr1")
                         {
-                            serialThrust = Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
-                            parsedThrust = true;
+                            readRawThrust = val;
+                            hasRawThrust = true;
+                        }
+                        else if (key == "raw_altitude" || key == "rawaltitude" || key == "raw_alt" || key == "fsr2" || key == "raw_fsr2")
+                        {
+                            readRawAltitude = val;
+                            hasRawAltitude = true;
+                        }
+                        else if (key == "raw_leftturn" || key == "rawleftturn" || key == "raw_left" || key == "fsr3" || key == "raw_fsr3")
+                        {
+                            readRawLeftTurn = val;
+                            hasRawLeftTurn = true;
+                        }
+                        else if (key == "raw_rightturn" || key == "rawrightturn" || key == "raw_right" || key == "fsr4" || key == "raw_fsr4")
+                        {
+                            readRawRightTurn = val;
+                            hasRawRightTurn = true;
+                        }
+                        // Arduino-processed percentage readings
+                        else if (key == "broom_speed" || key == "speed" || key == "thrust")
+                        {
+                            readBroomThrust = val;
+                            hasBroomThrust = true;
                         }
                         else if (key == "broom_altitude" || key == "altitude" || key == "climb" || key == "lift")
                         {
-                            serialAltitude = Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
-                            parsedAltitude = true;
+                            readBroomAltitude = val;
+                            hasBroomAltitude = true;
                         }
-                    }
-                }
-            }
-
-            // 2. Secondary fallback for raw ADC sensor keys ("Raw_Thrust", "Raw_Altitude")
-            if (!parsedThrust || !parsedAltitude)
-            {
-                foreach (string item in items)
-                {
-                    string[] parts = item.Split(':');
-                    if (parts.Length == 2)
-                    {
-                        string key = parts[0].Trim().ToLower();
-                        if (float.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val))
+                        else if (key == "broom_leftturn" || key == "broom_left" || key == "leftturn" || key == "left")
                         {
-                            if (!parsedThrust && (key == "raw_thrust" || key.Contains("thrust")))
-                            {
-                                serialThrust = ScaleSensorValue(val, rawThrustMax);
-                                parsedThrust = true;
-                            }
-                            else if (!parsedAltitude && (key == "raw_altitude" || key.Contains("alt")))
-                            {
-                                serialAltitude = ScaleSensorValue(val, rawAltitudeMax);
-                                parsedAltitude = true;
-                            }
+                            readBroomLeftTurn = val;
+                            hasBroomLeftTurn = true;
+                        }
+                        else if (key == "broom_rightturn" || key == "broom_right" || key == "rightturn" || key == "right")
+                        {
+                            readBroomRightTurn = val;
+                            hasBroomRightTurn = true;
                         }
                     }
                 }
             }
 
-            // 3. Fallback for unlabeled comma-separated numbers (e.g. "300, 700")
-            if (!parsedThrust && !parsedAltitude && items.Length >= 1)
+            // 2. Update live raw ADC tracking variables (so HUD & logs always reflect real hardware)
+            if (hasRawThrust) rawThrust = readRawThrust;
+            if (hasRawAltitude) rawAltitude = readRawAltitude;
+            if (hasRawLeftTurn) rawLeftTurn = readRawLeftTurn;
+            if (hasRawRightTurn) rawRightTurn = readRawRightTurn;
+
+            // 3. Calibrate and assign Steering (FSR 3 & FSR 4):
+            // When preferRawSteeringSensors is enabled (default), we calculate steering percentages
+            // in Unity using our dedicated independent thresholds, sensitivities, and response curves.
+            if (preferRawSteeringSensors && hasRawLeftTurn)
+            {
+                serialLeftTurn = ScaleFSR(rawLeftTurn, fsr3MinThreshold, rawLeftTurnMax, fsr3Sensitivity, fsr3ResponseCurve);
+                parsedLeftTurn = true;
+            }
+            else if (hasBroomLeftTurn)
+            {
+                serialLeftTurn = Mathf.RoundToInt(Mathf.Clamp(readBroomLeftTurn, 0f, 100f));
+                parsedLeftTurn = true;
+            }
+            else if (hasRawLeftTurn)
+            {
+                serialLeftTurn = ScaleFSR(rawLeftTurn, fsr3MinThreshold, rawLeftTurnMax, fsr3Sensitivity, fsr3ResponseCurve);
+                parsedLeftTurn = true;
+            }
+
+            if (preferRawSteeringSensors && hasRawRightTurn)
+            {
+                serialRightTurn = ScaleFSR(rawRightTurn, fsr4MinThreshold, rawRightTurnMax, fsr4Sensitivity, fsr4ResponseCurve);
+                parsedRightTurn = true;
+            }
+            else if (hasBroomRightTurn)
+            {
+                serialRightTurn = Mathf.RoundToInt(Mathf.Clamp(readBroomRightTurn, 0f, 100f));
+                parsedRightTurn = true;
+            }
+            else if (hasRawRightTurn)
+            {
+                serialRightTurn = ScaleFSR(rawRightTurn, fsr4MinThreshold, rawRightTurnMax, fsr4Sensitivity, fsr4ResponseCurve);
+                parsedRightTurn = true;
+            }
+
+            // 4. Calibrate and assign Thrust & Altitude (FSR 1 & FSR 2):
+            // When preferRawThrustAltitudeSensors is enabled, we calibrate raw ADC readings
+            // with independent FSR 1 and FSR 2 min/max thresholds, sensitivities, and response curves.
+            if (preferRawThrustAltitudeSensors && hasRawThrust)
+            {
+                serialThrust = ScaleFSR(rawThrust, fsr1MinThreshold, rawThrustMax, fsr1Sensitivity, fsr1ResponseCurve);
+                parsedThrust = true;
+            }
+            else if (hasBroomThrust)
+            {
+                serialThrust = Mathf.RoundToInt(Mathf.Clamp(readBroomThrust, 0f, 100f));
+                parsedThrust = true;
+            }
+            else if (hasRawThrust)
+            {
+                serialThrust = ScaleFSR(rawThrust, fsr1MinThreshold, rawThrustMax, fsr1Sensitivity, fsr1ResponseCurve);
+                parsedThrust = true;
+            }
+
+            if (preferRawThrustAltitudeSensors && hasRawAltitude)
+            {
+                serialAltitude = ScaleFSR(rawAltitude, fsr2MinThreshold, rawAltitudeMax, fsr2Sensitivity, fsr2ResponseCurve);
+                parsedAltitude = true;
+            }
+            else if (hasBroomAltitude)
+            {
+                serialAltitude = Mathf.RoundToInt(Mathf.Clamp(readBroomAltitude, 0f, 100f));
+                parsedAltitude = true;
+            }
+            else if (hasRawAltitude)
+            {
+                serialAltitude = ScaleFSR(rawAltitude, fsr2MinThreshold, rawAltitudeMax, fsr2Sensitivity, fsr2ResponseCurve);
+                parsedAltitude = true;
+            }
+
+            // 5. Fallback for unlabeled comma-separated numbers (e.g. "300, 700, 150, 0")
+            if (!parsedThrust && !parsedAltitude && !parsedLeftTurn && !parsedRightTurn && items.Length >= 1)
             {
                 if (float.TryParse(items[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val1))
                 {
-                    serialThrust = ScaleSensorValue(val1, rawThrustMax);
+                    rawThrust = val1;
+                    serialThrust = ScaleFSR(val1, fsr1MinThreshold, rawThrustMax, fsr1Sensitivity, fsr1ResponseCurve);
                     parsedThrust = true;
                 }
                 if (items.Length >= 2 && float.TryParse(items[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val2))
                 {
-                    serialAltitude = ScaleSensorValue(val2, rawAltitudeMax);
+                    rawAltitude = val2;
+                    serialAltitude = ScaleFSR(val2, fsr2MinThreshold, rawAltitudeMax, fsr2Sensitivity, fsr2ResponseCurve);
                     parsedAltitude = true;
+                }
+                if (items.Length >= 3 && float.TryParse(items[2].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val3))
+                {
+                    rawLeftTurn = val3;
+                    serialLeftTurn = ScaleFSR(val3, fsr3MinThreshold, rawLeftTurnMax, fsr3Sensitivity, fsr3ResponseCurve);
+                    parsedLeftTurn = true;
+                }
+                if (items.Length >= 4 && float.TryParse(items[3].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val4))
+                {
+                    rawRightTurn = val4;
+                    serialRightTurn = ScaleFSR(val4, fsr4MinThreshold, rawRightTurnMax, fsr4Sensitivity, fsr4ResponseCurve);
+                    parsedRightTurn = true;
                 }
             }
 
-            if (parsedThrust || parsedAltitude)
+            if (parsedThrust || parsedAltitude || parsedLeftTurn || parsedRightTurn)
             {
                 lastPacketReceivedTime = Time.time;
             }
@@ -677,6 +913,35 @@ public class BroomFlightController : MonoBehaviour
         {
             return Mathf.RoundToInt(Mathf.Clamp(val, 0f, 100f));
         }
+    }
+
+    /// <summary>
+    /// Scales an individual FSR ADC reading (0-1023) to a calibrated 0-100% control percentage,
+    /// applying custom deadzone, max ceiling, sensitivity multiplier, and non-linear response curves.
+    /// </summary>
+    private int ScaleFSR(float rawVal, float minVal, float maxVal, float sensitivity, float responseCurve)
+    {
+        if (maxVal <= minVal) maxVal = minVal + 1f;
+
+        // Below deadzone = 0%
+        if (rawVal <= minVal)
+        {
+            return 0;
+        }
+
+        // Normalized 0.0 to 1.0 between deadzone and max
+        float normalized = Mathf.Clamp01((rawVal - minVal) / (maxVal - minVal));
+
+        // Apply non-linear response curve (curve > 1 gives finer gentle control, curve < 1 gives immediate kick)
+        if (Mathf.Abs(responseCurve - 1.0f) > 0.01f && responseCurve > 0.01f)
+        {
+            normalized = Mathf.Pow(normalized, responseCurve);
+        }
+
+        // Apply sensitivity multiplier
+        float scaled = normalized * sensitivity * 100f;
+
+        return Mathf.RoundToInt(Mathf.Clamp(scaled, 0f, 100f));
     }
 
     private bool HasDigits(string input)

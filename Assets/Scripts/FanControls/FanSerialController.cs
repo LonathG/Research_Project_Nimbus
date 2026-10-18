@@ -12,8 +12,8 @@ public class FanSerialController : MonoBehaviour
     public static FanSerialController Instance { get; private set; }
 
     [Header("Serial Port Settings (Arduino Fans)")]
-    [Tooltip("Target COM port where the Arduino Fan controller is connected (e.g. COM12).")]
-    public string portName = "COM12";
+    [Tooltip("Target COM port where the Arduino Fan controller is connected (e.g. COM6).")]
+    public string portName = "COM6";
     [Tooltip("If enabled, automatically scans other COM ports ONLY if the specified port fails (excluding Broom port).")]
     public bool autoDetectPort = false;
     public int baudRate = 9600;
@@ -161,7 +161,7 @@ public class FanSerialController : MonoBehaviour
         if (isConnecting) yield break;
         isConnecting = true;
 
-        // 1. First priority: Open user-specified port (e.g. COM12)
+        // 1. First priority: Open user-specified port (e.g. COM6)
         if (!string.IsNullOrEmpty(portName) && !portName.Equals("AUTO", StringComparison.OrdinalIgnoreCase))
         {
             if (TryOpenPort(portName))
